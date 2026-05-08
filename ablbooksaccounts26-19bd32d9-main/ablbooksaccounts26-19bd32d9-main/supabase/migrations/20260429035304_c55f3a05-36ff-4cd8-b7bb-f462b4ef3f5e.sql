@@ -1,0 +1,1 @@
+ALTER TABLE public.cdb_entries ADD COLUMN IF NOT EXISTS particulars text;
