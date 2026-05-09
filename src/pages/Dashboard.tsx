@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { ModuleIcon, ModuleKey, MODULE_THEME } from "@/components/ModuleIcons";
-import { useEffect, useState } from "react";
-import { format } from "date-fns";
+
 
 type GridModule = {
   key: ModuleKey;
@@ -20,12 +19,6 @@ const MODULES: GridModule[] = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [currentTime, setCurrentTime] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   return (
     <div
@@ -37,20 +30,11 @@ export default function Dashboard() {
           <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-40 h-40 bg-blue-500/10 rounded-full blur-[80px] -z-10"></div>
           
           <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-white mb-2 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/40">
-            Welcome, Adrian
+            Financial Operations Dashboard
           </h1>
           <p className="text-lg text-blue-400 font-bold tracking-widest uppercase mb-6">
             ABL Financial Management System
           </p>
-          
-          <div className="flex flex-col items-center justify-center space-y-1">
-            <p className="text-sm text-white/50 font-medium">
-              {format(currentTime, "EEEE, MMMM do, yyyy")}
-            </p>
-            <p className="text-xs font-mono text-blue-500/80 font-black">
-              {format(currentTime, "HH:mm:ss")}
-            </p>
-          </div>
           
           <div className="mt-8 h-px w-32 mx-auto bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
         </div>
