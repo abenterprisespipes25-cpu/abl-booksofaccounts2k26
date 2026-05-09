@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { handleApiError } from "@/lib/errorHandler";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Download, Upload, Trash2, AlertTriangle, Loader2, Building2, Save } from "lucide-react";
@@ -23,6 +25,7 @@ const MODULE_TO_TABLE: Record<string, string> = {
 };
 
 export default function Maintenance() {
+  const queryClient = useQueryClient();
   const [uploads, setUploads] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [clearText, setClearText] = useState("");
@@ -34,25 +37,33 @@ export default function Maintenance() {
   // Company settings
   const [company, setCompany] = useState({ company_name: "", address: "", tin_no: "", contact_no: "" });
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const [savingCompany, setSavingCompany] = useState(false);
 
-  async function loadCompany() {
-    const { data } = await supabase.from("company_settings").select("*").limit(1).maybeSingle();
-    if (data) {
-      setCompanyId(data.id);
-      setCompany({
-        company_name: data.company_name || "",
-        address: data.address || "",
-        tin_no: data.tin_no || "",
-        contact_no: data.contact_no || "",
-      });
-    }
-  }
+  const { isLoading: isLoadingCompany, error: companyError } = useQuery({
+    queryKey: ["company_settings"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("company_settings").select("*").limit(1).maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setCompanyId(data.id);
+        setCompany({
+          company_name: data.company_name || "",
+          address: data.address || "",
+          tin_no: data.tin_no || "",
+          contact_no: data.contact_no || "",
+        });
+      }
+      return data;
+    },
+    retry: 3,
+    refetchOnWindowFocus: false,
+  });
 
-  async function saveCompany() {
-    setSavingCompany(true);
-    try {
-      const payload = { ...company, updated_at: new Date().toISOString() };
+  useEffect(() => {
+    if (companyError) handleApiError(companyError, "loading company settings");
+  }, [companyError]);
+
+  const saveCompanyMutation = useMutation({
+    mutationFn: async (payload: any) => {
       if (companyId) {
         const { error } = await supabase.from("company_settings").update(payload).eq("id", companyId);
         if (error) throw error;
@@ -60,20 +71,33 @@ export default function Maintenance() {
         const { data, error } = await supabase.from("company_settings").insert(payload).select().single();
         if (error) throw error;
         if (data) setCompanyId(data.id);
+        return data;
       }
+    },
+    retry: 2,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["company_settings"] });
       toast.success("Company settings saved.");
-    } catch (e: any) {
-      toast.error(`Save failed: ${e.message || e}`);
-    } finally {
-      setSavingCompany(false);
+    },
+    onError: (error) => handleApiError(error, "saving company settings")
+  });
+
+  function saveCompany() {
+    if (!company.company_name) {
+      toast.error("Company Name is required");
+      return;
     }
+    const payload = { ...company, updated_at: new Date().toISOString() };
+    saveCompanyMutation.mutate(payload);
   }
+
+  const savingCompany = saveCompanyMutation.isPending;
 
   async function loadUploads() {
     const { data } = await supabase.from("uploaded_files").select("*").order("uploaded_at", { ascending: false });
     setUploads(data ?? []);
   }
-  useEffect(() => { loadUploads(); loadCompany(); }, []);
+  useEffect(() => { loadUploads(); }, []);
 
   async function backup() {
     setBusy(true);
