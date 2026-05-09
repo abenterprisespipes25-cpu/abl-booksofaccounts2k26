@@ -16,6 +16,7 @@ const CashReceiptsPage = lazy(() => import("./pages/CashReceiptsPage"));
 const GeneralLedger = lazy(() => import("./pages/GeneralLedger"));
 const TrialBalance = lazy(() => import("./pages/TrialBalance"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
+const JournalEntries = lazy(() => import("./pages/JournalEntries"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => {
               <Route path="/cash-receipts" element={<CashReceiptsPage />} />
               <Route path="/general-ledger" element={<GeneralLedger />} />
               <Route path="/trial-balance" element={<TrialBalance />} />
+              <Route path="/journal-entries" element={<JournalEntries />} />
               <Route path="/maintenance" element={<Maintenance />} />
             </Route>
             <Route path="*" element={<NotFound />} />

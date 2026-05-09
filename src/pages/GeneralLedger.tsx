@@ -53,6 +53,7 @@ const MODULE_PARTICULARS: Record<string, string> = {
   PB: "Purchases",
   SB: "Sales",
   CR: "Collections",
+  JE: "Journal Entry",
   JB: "General Journal Entries",
 };
 
