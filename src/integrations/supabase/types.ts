@@ -236,6 +236,89 @@ export type Database = {
         }
         Relationships: []
       }
+      journal_entries: {
+        Row: {
+          approved_by: string | null
+          created_at: string
+          entry_date: string
+          id: string
+          journal_no: string
+          month_year: string
+          prepared_by: string | null
+          reference_no: string | null
+          remarks: string | null
+          updated_at: string
+        }
+        Insert: {
+          approved_by?: string | null
+          created_at?: string
+          entry_date: string
+          id?: string
+          journal_no: string
+          month_year: string
+          prepared_by?: string | null
+          reference_no?: string | null
+          remarks?: string | null
+          updated_at?: string
+        }
+        Update: {
+          approved_by?: string | null
+          created_at?: string
+          entry_date?: string
+          id?: string
+          journal_no?: string
+          month_year?: string
+          prepared_by?: string | null
+          reference_no?: string | null
+          remarks?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      journal_entry_lines: {
+        Row: {
+          account_code: string | null
+          account_name: string
+          created_at: string
+          credit: number
+          debit: number
+          description: string | null
+          id: string
+          journal_id: string
+          line_order: number
+        }
+        Insert: {
+          account_code?: string | null
+          account_name: string
+          created_at?: string
+          credit?: number
+          debit?: number
+          description?: string | null
+          id?: string
+          journal_id: string
+          line_order?: number
+        }
+        Update: {
+          account_code?: string | null
+          account_name?: string
+          created_at?: string
+          credit?: number
+          debit?: number
+          description?: string | null
+          id?: string
+          journal_id?: string
+          line_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "journal_entry_lines_journal_id_fkey"
+            columns: ["journal_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_book_entries: {
         Row: {
           ap_trade_cr: number | null

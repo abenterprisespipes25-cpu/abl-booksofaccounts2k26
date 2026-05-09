@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, CloudCheck, CloudSync, CloudAlert } from "lucide-react";
+import { Loader2, Cloud as CloudCheck, CloudOff as CloudAlert } from "lucide-react";
 
 interface SyncInfo {
   status: 'syncing' | 'synced' | 'error';

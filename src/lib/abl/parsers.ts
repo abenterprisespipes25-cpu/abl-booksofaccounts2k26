@@ -9,6 +9,38 @@ export interface ParsedResult<T> {
   monthYear: string;
 }
 
+// Force every row + GL entry into a target month_year. Re-stamps folios and
+// rewrites the day-of-month in entry_date to keep records inside the month.
+export function forceMonthYear<T extends Record<string, any>>(
+  parsed: ParsedResult<T>,
+  targetMY: string,
+  folioPrefix: string,
+): ParsedResult<T> {
+  const p = parseMonthYearLite(targetMY);
+  const remapDate = (iso: string): string => {
+    if (!p) return iso;
+    const day = (iso || "").slice(8, 10) || "01";
+    const safeDay = Math.min(parseInt(day, 10) || 1, new Date(p.year, p.month + 1, 0).getDate());
+    return `${p.year}-${String(p.month + 1).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+  };
+  const folio = folioFor(folioPrefix, targetMY);
+  return {
+    monthYear: targetMY,
+    rows: parsed.rows.map((r: any) => ({ ...r, month_year: targetMY, entry_date: remapDate(r.entry_date) })) as T[],
+    glEntries: parsed.glEntries.map((g) => ({ ...g, month_year: targetMY, entry_date: remapDate(g.entry_date), folio })),
+  };
+}
+
+function parseMonthYearLite(my: string): { month: number; year: number } | null {
+  const months = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+  const parts = (my || "").trim().toUpperCase().split(/\s+/);
+  if (parts.length !== 2) return null;
+  const m = months.indexOf(parts[0]);
+  const y = parseInt(parts[1], 10);
+  return m < 0 || isNaN(y) ? null : { month: m, year: y };
+}
+
+
 export interface GLRow {
   month_year: string;
   entry_date: string; // YYYY-MM-DD
