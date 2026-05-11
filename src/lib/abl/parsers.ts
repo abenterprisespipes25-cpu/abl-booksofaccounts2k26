@@ -503,8 +503,9 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
 
         if (acct.toLowerCase() === "accounts payable") {
           entry.ap_trade_cr = round2(entry.ap_trade_cr + cr);
-        } else if (acct.toLowerCase().includes("input vat")) {
+        } else if (acct.toLowerCase().includes("input")) {
           entry.input_tax = round2(entry.input_tax + dr);
+
         } else if (acct.startsWith("Cost of Construction:") && acct.toLowerCase().includes("fuel")) {
           entry.fuel_construction = round2((entry.fuel_construction || 0) + dr);
         } else {
@@ -579,12 +580,15 @@ export function parseSalesBook(buf: ArrayBuffer): ParsedResult<any> {
       const invoiceNo = String(r[2] ?? "").trim();
       const customer = String(r[3] ?? "").trim();
       const amt = num(r[7]); // Column H (Amount)
+      const taxName = String(r[8] ?? "").toLowerCase(); // User says Column I
       
       if (amt === 0) continue;
 
+      const isNoVat = taxName.includes("no vat");
       const net = round2(amt);
-      const vat = round2(net * 0.12); // User: "formula ani kay sa NET SALES x 0.12"
-      const gross = round2(net + vat); // User: "NET SALES + OUTPUT TAX"
+      const vat = isNoVat ? 0 : round2(net * 0.12); // User: "No VAT dapat zero lng amount"
+      const gross = round2(net + vat);
+ // User: "NET SALES + OUTPUT TAX"
       const my = monthYearFromISO(iso);
       
       allParsed.push({
