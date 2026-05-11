@@ -23,6 +23,18 @@ export function LedgerTable({
   showTotals?: boolean;
   emptyMessage?: string;
 }) {
+  const [displayCount, setDisplayCount] = React.useState(200);
+
+  // Progressive loading for large datasets to prevent browser hang
+  React.useEffect(() => {
+    if (rows.length > displayCount) {
+      const timer = setTimeout(() => {
+        setDisplayCount(prev => Math.min(prev + 500, rows.length));
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [rows.length, displayCount]);
+
   if (!rows.length) {
     return (
       <div style={{
@@ -116,7 +128,7 @@ export function LedgerTable({
           </thead>
 
           <tbody>
-            {rows.map((r, ri) => {
+            {rows.slice(0, displayCount).map((r, ri) => {
               const bg = ri % 2 === 0 ? "#ffffff" : "#f9fafb";
               return (
                 <tr key={r.id ?? ri} style={{ background: bg }}>
@@ -153,6 +165,14 @@ export function LedgerTable({
           )}
         </table>
       </div>
+      {rows.length > displayCount && (
+        <div style={{
+          padding: "8px 12px", background: "#fef3c7", borderTop: "1px solid #f59e0b",
+          fontSize: "0.75rem", color: "#92400e", textAlign: "center", fontWeight: 500
+        }}>
+          Loading more rows... ({displayCount} of {rows.length} displayed)
+        </div>
+      )}
     </div>
   );
 }

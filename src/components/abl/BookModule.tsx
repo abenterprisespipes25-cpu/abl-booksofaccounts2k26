@@ -198,12 +198,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         }
       }
 
-      const BATCH = 100;
+      const BATCH = 1000;
       for (let i = 0; i < parsed.rows.length; i += BATCH) {
         const chunk = parsed.rows.slice(i, i + BATCH);
         const { error } = await supabase.from(meta.tableName).insert(chunk as any);
         if (error) throw error;
       }
+
 
       if (moduleId === "purchase_book" && parsed.sundries && parsed.sundries.length > 0) {
         for (let i = 0; i < parsed.sundries.length; i += BATCH) {
@@ -213,6 +214,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         }
       }
 
+
       if (parsed.glEntries.length) {
         for (let i = 0; i < parsed.glEntries.length; i += BATCH) {
           const chunk = parsed.glEntries.slice(i, i + BATCH);
@@ -220,6 +222,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           if (error) throw error;
         }
       }
+
 
       for (const my of monthsInFile) {
         const rowCount = parsed.rows.filter((r: any) => r.month_year === my).length;
