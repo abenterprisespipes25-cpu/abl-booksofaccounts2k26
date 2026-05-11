@@ -533,8 +533,25 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
         }
       }
 
+      // 1.5 Calculate the A/P TRADE-CR as the sum of all distributions
+      // This ensures the report balances: A/P = Sum(Debits) - Sum(Credits other than A/P)
+      const apSum = round2(
+        (fixedTotals.input_tax || 0) +
+        (fixedTotals.repairs_admin || 0) +
+        (fixedTotals.repairs_sales || 0) +
+        (fixedTotals.repairs_plant || 0) +
+        (fixedTotals.fuel_admin || 0) +
+        (fixedTotals.fuel_plant || 0) +
+        (fixedTotals.fuel_sales || 0) +
+        (fixedTotals.fuel_construction || 0) +
+        (fixedTotals.itw_top_10t || 0) + // itw is already negative
+        sundries.reduce((acc, s) => acc + s.amount, 0)
+      );
+      fixedTotals.ap_trade_cr = apSum;
+
       // 2. Second pass: Create rows for the table visibility
       if (sundries.length === 0) {
+
         allRows.push({ ...entry, ...fixedTotals });
       } else {
         sundries.forEach((s, idx) => {
@@ -554,6 +571,7 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
       }
 
       // 3. Post the header row's account to GL (Accountant verified: Credit Liability)
+      // Use the calculated apSum to ensure the GL balances with the distributions
       if (tx.account) {
         glEntries.push({
           month_year: my,
@@ -561,12 +579,13 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
           account_name: tx.account,
           particulars: tx.supplier,
           folio: folio,
-          debit: tx.debit,
-          credit: tx.credit,
+          debit: 0,
+          credit: apSum,
           source_module: 'PB',
           source_ref: tx.no
         });
       }
+
     }
   }
 
