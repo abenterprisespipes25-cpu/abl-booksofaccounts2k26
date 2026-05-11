@@ -56,39 +56,16 @@ export function fundToGLAccount(fund: string): string {
   return FUND_TO_GL_ACCOUNT[fund] || `CIB - ${fund}`;
 }
 
-// Widths in pixels (approx 7px per Excel char unit). Spec: char 8/10/25/30/35.
 export const CDB_COLUMNS: ColumnDef[] = [
-  { header: "DATE", field: "entry_date", type: "date", width: 56 },
-  { header: "PAYEE", field: "payee", type: "text", width: 175 },
-  { header: "PARTICULARS", field: "particulars", type: "text", width: 210 },
-  { header: "VOUCHER NO.", field: "check_voucher_no", type: "text", width: 70 },
-  { header: "CHECK NO.", field: "check_no", type: "text", width: 70 },
-  { header: "FUND", field: "fund", type: "text", width: 70 },
-  { header: "PETTY CASH", field: "petty_cash_voucher", type: "text", width: 70 },
-  { header: "CASH AMOUNT", field: "cash_amount", type: "currency", width: 70 },
-  { header: "ACCOUNTS PAYABLE-TRADE", field: "accounts_payable_trade", type: "currency", width: 70 },
-  { header: "VAT INPUT TAX", field: "vat_input_tax", type: "currency", width: 70 },
-  { header: "DIRECT LABOR / BASIC", field: "direct_labor_basic", type: "currency", width: 70 },
-  { header: "OVERHEAD LABOR / BASIC", field: "overhead_labor_basic", type: "currency", width: 70 },
-  { header: "COMM., LIGHT & WATER-PLANT", field: "comm_light_water_plant", type: "currency", width: 70 },
-  { header: "COMM., LIGHT & WATER-ADMIN", field: "comm_light_water_admin", type: "currency", width: 70 },
-  { header: "COMM., LIGHT & WATER-SALES", field: "comm_light_water_sales", type: "currency", width: 70 },
-  { header: "ITW TOP 10K CORP.", field: "itw_top_10k_corp", type: "currency", width: 70, creditCol: true },
-  { header: "ITW COMPENSATION", field: "itw_compensation", type: "currency", width: 70, creditCol: true },
-  { header: "ITW AT SOURCE", field: "itw_at_source", type: "currency", width: 70, creditCol: true },
-  { header: "SSS, PHIC & HDMF PREM.PAYABLE", field: "sss_phic_hdmf_prem", type: "currency", width: 70 },
-  { header: "SSS/HDMF LOAN PAYABLE", field: "sss_hdmf_loan", type: "currency", width: 70 },
-  { header: "OUTSIDE SERVICES Construction", field: "outside_services_construction", type: "currency", width: 70 },
-  { header: "TRAVEL & TRANSPORTATION ADMIN.", field: "travel_admin", type: "currency", width: 70 },
-  { header: "TRAVEL & TRANSPORTATION SALES", field: "travel_sales", type: "currency", width: 70 },
-  { header: "TRAVEL & TRANSPORTATION CONST.", field: "travel_construction", type: "currency", width: 70 },
-  { header: "TRAVEL & TRANSPORTATION WATER", field: "travel_water", type: "currency", width: 70 },
-  { header: "SALES COMM 3RD PARTY PAY", field: "sales_comm_3rd_party", type: "currency", width: 70 },
-  { header: "Delivery Expenses", field: "delivery_expenses", type: "currency", width: 70 },
-  { header: "ADVANCES TO OFFICERS/EMP.", field: "advances_officers_emp", type: "currency", width: 70 },
-  { header: "SUNDRIES ACCT. TITLE", field: "sundries_acct_title", type: "text", width: 245 },
-  { header: "SUNDRIES AMOUNT DR", field: "sundries_dr", type: "currency", width: 70 },
-  { header: "SUNDRIES AMOUNT CR", field: "sundries_cr", type: "currency", width: 70 },
+  { header: "DATE", field: "date", type: "date", width: 80 },
+  { header: "PAYEE", field: "payee", type: "text", width: 200 },
+  { header: "PARTICULARS", field: "particulars", type: "text", width: 220 },
+  { header: "VOUCHER NO.", field: "voucher_no", type: "text", width: 90 },
+  { header: "CHECK NO.", field: "check_no", type: "text", width: 90 },
+  { header: "FUND", field: "fund", type: "text", width: 100 },
+  { header: "ACCOUNT", field: "account", type: "text", width: 280 },
+  { header: "DEBIT", field: "debit", type: "currency", width: 120 },
+  { header: "CREDIT", field: "credit", type: "currency", width: 120 },
 ];
 
 export const PB_COLUMNS: ColumnDef[] = [

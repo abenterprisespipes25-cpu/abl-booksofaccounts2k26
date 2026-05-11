@@ -35,7 +35,7 @@ export function LedgerTable({
                   key={i} 
                   style={{ minWidth: c.width, width: c.width }} 
                   className={cn(
-                    "px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white/40 border-b border-white/10",
+                    "px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white/40 border border-white/10",
                     c.type === "currency" ? "text-right" : "text-left"
                   )}
                 >
@@ -54,7 +54,7 @@ export function LedgerTable({
                   <td 
                     key={ci} 
                     className={cn(
-                      "px-6 py-3 whitespace-nowrap font-mono text-[11px]",
+                      "px-6 py-3 whitespace-nowrap font-mono text-[11px] border border-white/10",
                       c.type === "currency" ? "text-right text-emerald-400/90" : "text-white/70",
                       c.type === "currency" && Number(r[c.field]) < 0 && "text-rose-400/90"
                     )}
@@ -76,7 +76,7 @@ export function LedgerTable({
                   <td 
                     key={i} 
                     className={cn(
-                      "px-6 py-4 text-right font-black font-mono text-[11px] text-blue-300",
+                      "px-6 py-4 text-right font-black font-mono text-[11px] text-blue-300 border border-white/10",
                       i === 0 && "text-left font-sans text-white/50 tracking-widest"
                     )}
                   >

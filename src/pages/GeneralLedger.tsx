@@ -1,244 +1,307 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { sortMonthYears, parseMonthYear, folioFor, round2, fmtMoney } from "@/lib/abl/format";
-import { MONTH_FULL } from "@/lib/abl/config";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { FileText, Printer, Search, Loader2, Download, Calendar } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { getCompanySettings, CompanySettings } from "@/lib/abl/companySettings";
-import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Search, Loader2 } from "lucide-react";
+import * as XLSX from "xlsx";
 import React from "react";
 
-interface GL {
-  id: string;
-  entry_date: string;
+interface GLEntry {
   account_name: string;
-  particulars: string;
+  entry_date: string;
+  month_year: string; // Used as month_tab
+  source_module: string;
   folio: string;
+  particulars: string;
   debit: number;
   credit: number;
-  source_module: string;
-  month_year: string;
 }
 
-interface TEntry {
+interface TRow {
   date: string;
   particulars: string;
   folio: string;
-  debit: number;
-  credit: number;
-  sortKey: string;
+  amount: number;
 }
 
-interface TMonthGroup {
-  monthYear: string;
-  entries: TEntry[];
-  begBalance: number;
-  endBalance: number;
-}
-
-interface TAccount {
+interface TAccountData {
   accountName: string;
-  months: TMonthGroup[];
-  totalDebit: number;
-  totalCredit: number;
-  finalBalance: number;
+  debitRows: TRow[];
+  creditRows: TRow[];
+  totalDR: number;
+  totalCR: number;
+  balanceDR: number;
+  balanceCR: number;
+  grandTotal: number;
 }
 
-const MODULE_PARTICULARS: Record<string, string> = {
-  CDB: "Disbursements",
-  PB: "Purchases",
-  SB: "Sales",
-  CR: "Collections",
-  JE: "Journal Entry",
-  JB: "General Journal Entries",
-};
+function r2(n: number): number { return Math.round(n * 100) / 100; }
 
-const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function mapParticulars(module: string): string {
+  const m: Record<string, string> = {
+    CDB: 'Disbursements', PB: 'Purchases', SB: 'Sales', CR: 'Collections',
+    JB: 'General Journal Entries', GJB: 'General Journal Entries', JE: 'Journal Entry'
+  };
+  return m[module] ?? module;
+}
 
-function lastDayLabel(monthYear: string): string {
-  const p = parseMonthYear(monthYear);
-  if (!p) return monthYear;
-  const last = new Date(p.year, p.month + 1, 0).getDate();
-  return `${MONTH_SHORT[p.month]} ${last}`;
+function lastDayISO(dateStr: string): string {
+  const d = new Date(dateStr);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
+}
+
+function lastDayDisplay(dateStr: string): string {
+  const d = new Date(dateStr);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${MON[last.getMonth()]} ${last.getDate()}`;
+}
+
+function buildTAccount(accountName: string, entries: GLEntry[]): TAccountData {
+  const groups = new Map<string, { dr: number; cr: number; particulars: string; folio: string; displayDate: string; sortKey: string }>();
+
+  for (const entry of entries) {
+    const key = `${entry.month_year}||${entry.source_module}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        dr:          0,
+        cr:          0,
+        particulars: mapParticulars(entry.source_module),
+        folio:       entry.folio ?? entry.source_module,
+        displayDate: lastDayDisplay(entry.entry_date),
+        sortKey:     lastDayISO(entry.entry_date),
+      });
+    }
+    const g = groups.get(key)!;
+    g.dr = r2(g.dr + (entry.debit  || 0));
+    g.cr = r2(g.cr + (entry.credit || 0));
+  }
+
+  const sorted = Array.from(groups.values()).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  const debitRows:  TRow[] = [];
+  const creditRows: TRow[] = [];
+
+  for (const g of sorted) {
+    if (g.dr > 0) debitRows.push({  date: g.displayDate, particulars: g.particulars, folio: g.folio, amount: g.dr });
+    if (g.cr > 0) creditRows.push({ date: g.displayDate, particulars: g.particulars, folio: g.folio, amount: g.cr });
+  }
+
+  const totalDR   = r2(debitRows.reduce((s, r)  => s + r.amount, 0));
+  const totalCR   = r2(creditRows.reduce((s, r) => s + r.amount, 0));
+  const balanceDR = totalCR > totalDR ? r2(totalCR - totalDR) : 0;
+  const balanceCR = totalDR > totalCR ? r2(totalDR - totalCR) : 0;
+  const grandTotal = r2(Math.max(totalDR + balanceDR, totalCR + balanceCR));
+
+  return { accountName, debitRows, creditRows, totalDR, totalCR, balanceDR, balanceCR, grandTotal };
+}
+
+function exportGLAccountExcel(data: TAccountData, settings: CompanySettings) {
+  const wb   = XLSX.utils.book_new();
+  const maxLen = Math.max(data.debitRows.length, data.creditRows.length);
+
+  const wsData: unknown[][] = [];
+  wsData.push([settings.company_name, null, null, null, null, null, null, null, null]);
+  if (settings.address) wsData.push([settings.address]);
+  if (settings.tin_no)  wsData.push([`TIN: ${settings.tin_no}`]);
+  wsData.push([]);
+  wsData.push([data.accountName.toUpperCase()]);
+  wsData.push([]);
+  wsData.push(['DATE','PARTICULARS','FOLIO ','DEBIT',null,'DATE','PARTICULARS','FOLIO ','CREDIT']);
+
+  for (let i = 0; i < maxLen; i++) {
+    const dr = data.debitRows[i];
+    const cr = data.creditRows[i];
+    wsData.push([
+      dr?.date ?? null, dr?.particulars ?? null, dr?.folio ?? null, dr ? dr.amount : null,
+      null,
+      cr?.date ?? null, cr?.particulars ?? null, cr?.folio ?? null, cr ? cr.amount : null,
+    ]);
+  }
+
+  if (data.balanceDR > 0 || data.balanceCR > 0) {
+    wsData.push([
+      null, 'Balance c/d', null, data.balanceDR > 0 ? data.balanceDR : null,
+      null,
+      null, 'Balance c/d', null, data.balanceCR > 0 ? data.balanceCR : null,
+    ]);
+  }
+
+  wsData.push([null,'TOTAL',null, data.grandTotal, null, null,'TOTAL',null, data.grandTotal]);
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:12},{wch:30},{wch:16},{wch:18},{wch:2},{wch:12},{wch:30},{wch:16},{wch:18}];
+
+  const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:I1');
+  const borderAll = { top:{style:'thin',color:{rgb:'CBD5E1'}}, bottom:{style:'thin',color:{rgb:'CBD5E1'}}, left:{style:'thin',color:{rgb:'CBD5E1'}}, right:{style:'thin',color:{rgb:'CBD5E1'}} };
+  const borderMedium = { top:{style:'medium',color:{rgb:'000000'}}, bottom:{style:'medium',color:{rgb:'000000'}}, left:{style:'medium',color:{rgb:'000000'}}, right:{style:'medium',color:{rgb:'000000'}} };
+  const borderDouble = { top:{style:'double',color:{rgb:'000000'}} };
+
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      if (C === 4) continue;
+      const addr = XLSX.utils.encode_cell({r:R, c:C});
+      if (!ws[addr]) ws[addr] = {t:'z', v:null};
+
+      const isHeaderRow = R === 6;
+      const isTotalRow  = R === wsData.length - 1;
+      const isBalRow    = (data.balanceDR > 0 || data.balanceCR > 0) && R === wsData.length - 2;
+
+      ws[addr].s = {
+        font: {
+          name:  'Arial',
+          sz:    isHeaderRow || isTotalRow ? 10 : 9,
+          bold:  isHeaderRow || isTotalRow || isBalRow,
+          italic: isBalRow,
+          color: { rgb: isHeaderRow ? 'FFFFFF' : '000000' },
+        },
+        fill: isHeaderRow
+          ? { fgColor: { rgb: '0F2744' }, patternType: 'solid' }
+          : isTotalRow
+          ? { fgColor: { rgb: 'DBEAFE' }, patternType: 'solid' }
+          : isBalRow
+          ? { fgColor: { rgb: 'FEF9C3' }, patternType: 'solid' }
+          : (R % 2 === 0 ? { fgColor: { rgb: 'FFFFFF' }, patternType: 'solid' } : { fgColor: { rgb: 'F9FAFB' }, patternType: 'solid' }),
+        border: isTotalRow ? { ...borderAll, top: borderDouble.top } : borderAll,
+        alignment: {
+          horizontal: (C === 3 || C === 8) ? 'right' : (C === 2 || C === 7) ? 'center' : 'left',
+          vertical:   'center',
+          wrapText:   false,
+        },
+        numFmt: (C === 3 || C === 8) ? '#,##0.00' : undefined,
+      };
+    }
+  }
+
+  const sheetName = data.accountName.replace(/[^a-zA-Z0-9 ]/g,'').substring(0,31);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, `GL_${sheetName.replace(/ /g,'_')}.xlsx`);
+}
+
+function printGLAccount(data: TAccountData, settings: CompanySettings) {
+  const fmt = (n: number) => n > 0 ? n.toLocaleString('en-PH',{minimumFractionDigits:2, maximumFractionDigits:2}) : '';
+  const maxLen = Math.max(data.debitRows.length, data.creditRows.length);
+
+  let rows = '';
+  for (let i = 0; i < maxLen; i++) {
+    const dr = data.debitRows[i];
+    const cr = data.creditRows[i];
+    rows += `<tr style='background:${i%2===0?'#fff':'#f9fafb'}'>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${dr?.date??''}</td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${dr?.particulars??''}</td>
+      <td style='text-align:center;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${dr?.folio??''}</td>
+      <td style='text-align:right;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${dr?fmt(dr.amount):''}</td>
+      <td class='t-divider'></td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${cr?.date??''}</td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${cr?.particulars??''}</td>
+      <td style='text-align:center;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${cr?.folio??''}</td>
+      <td style='text-align:right;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${cr?fmt(cr.amount):''}</td>
+    </tr>`;
+  }
+
+  if (data.balanceDR > 0 || data.balanceCR > 0) {
+    rows += `<tr style='background:#fef9c3;font-style:italic;font-weight:600'>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>Balance c/d</td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+      <td style='text-align:right;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${data.balanceDR>0?fmt(data.balanceDR):''}</td>
+      <td class='t-divider'></td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>Balance c/d</td>
+      <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+      <td style='text-align:right;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${data.balanceCR>0?fmt(data.balanceCR):''}</td>
+    </tr>`;
+  }
+
+  rows += `<tr style='background:#dbeafe;font-weight:700;border-top:2.5pt double #000'>
+    <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+    <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>TOTAL</td>
+    <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+    <td style='text-align:right;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${fmt(data.grandTotal)}</td>
+    <td class='t-divider'></td>
+    <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+    <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>TOTAL</td>
+    <td style='border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'></td>
+    <td style='text-align:right;border:1px solid #cbd5e1;padding:4px 8px;font-size:8pt'>${fmt(data.grandTotal)}</td>
+  </tr>`;
+
+  const html = `<!DOCTYPE html><html><head><style>
+    *{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:0;box-sizing:border-box}
+    body{padding:15mm 20mm}
+    .hdr{text-align:center;margin-bottom:12px}
+    .hdr .co{font-size:13pt;font-weight:700}
+    .hdr .addr{font-size:9pt;margin:2px 0}
+    .hdr .book{font-size:11pt;font-weight:700;margin-top:4px}
+    .hdr .acct{font-size:11pt;font-weight:700;background:#0f2744;color:#fff;padding:5px 12px;margin-top:6px;text-align:center}
+    table{width:100%;border-collapse:collapse;font-size:8pt}
+    th{background:#0f2744;color:#fff;font-weight:700;padding:5px 8px;font-size:7.5pt;border:1px solid #1e3a5f}
+    .t-divider{background:#0f2744 !important;width:6px !important;padding:0 !important;border:1px solid #0f2744 !important}
+    @media print{body{padding:10mm 15mm}@page{size:landscape}}
+  </style></head><body>
+  <div class='hdr'>
+    <div class='co'>${settings.company_name}</div>
+    ${settings.address ? `<div class='addr'>${settings.address}</div>` : ''}
+    ${settings.tin_no  ? `<div class='addr'>TIN: ${settings.tin_no}</div>` : ''}
+    <div class='book'>GENERAL LEDGER</div>
+    <div class='acct'>${data.accountName.toUpperCase()}</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>DATE</th><th>PARTICULARS</th><th>FOLIO</th><th>DEBIT</th>
+      <th class='t-divider'></th>
+      <th>DATE</th><th>PARTICULARS</th><th>FOLIO</th><th>CREDIT</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  </body></html>`;
+
+  const w = window.open('','_blank');
+  if (w) { w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>{w.print();},600); }
 }
 
 export default function GeneralLedger() {
-  const [rows, setRows] = useState<GL[]>([]);
+  const [dataMap, setDataMap] = useState<Map<string, GLEntry[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [selectedYear, setSelectedYear] = useState<string>("ALL");
-  const [selectedMonth, setSelectedMonth] = useState<string>("ALL");
   const [settings, setSettings] = useState<CompanySettings | null>(null);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [glRes, s] = await Promise.all([
-        supabase.from("gl_entries").select("*").order("entry_date", { ascending: true }).limit(20000),
+      const [{ data }, s] = await Promise.all([
+        supabase.from('gl_entries')
+          .select('account_name, entry_date, month_year, source_module, folio, particulars, debit, credit')
+          .order('entry_date', { ascending: true })
+          .limit(20000),
         getCompanySettings(),
       ]);
-      setRows((glRes.data ?? []) as any);
+
+      const map = new Map<string, GLEntry[]>();
+      for (const row of data ?? []) {
+        const key = row.account_name.trim();
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(row as any);
+      }
+      setDataMap(map);
       setSettings(s);
       setLoading(false);
     })();
   }, []);
 
-  const years = useMemo(() => {
-    const ySet = new Set<string>();
-    rows.forEach(r => {
-      const p = parseMonthYear(r.month_year);
-      if (p) ySet.add(p.year.toString());
-    });
-    return Array.from(ySet).sort();
-  }, [rows]);
-
-  const allMonths = useMemo(() => {
-    const mSet = new Set<string>();
-    rows.forEach(r => mSet.add(r.month_year));
-    return sortMonthYears(Array.from(mSet));
-  }, [rows]);
-
-  const tAccounts = useMemo<TAccount[]>(() => {
-    const acctMap = new Map<string, Map<string, Map<string, { dr: number; cr: number }>>>();
-    for (const r of rows) {
-      const acct = r.account_name;
-      const mod = (r.source_module || "JB").toUpperCase();
-      if (!acctMap.has(acct)) acctMap.set(acct, new Map());
-      const byMonth = acctMap.get(acct)!;
-      if (!byMonth.has(r.month_year)) byMonth.set(r.month_year, new Map());
-      const byMod = byMonth.get(r.month_year)!;
-      if (!byMod.has(mod)) byMod.set(mod, { dr: 0, cr: 0 });
-      const cell = byMod.get(mod)!;
-      cell.dr = round2(cell.dr + Number(r.debit || 0));
-      cell.cr = round2(cell.cr + Number(r.credit || 0));
+  const tAccounts = useMemo(() => {
+    const list: TAccountData[] = [];
+    const accounts = Array.from(dataMap.keys()).sort();
+    for (const acct of accounts) {
+      list.push(buildTAccount(acct, dataMap.get(acct)!));
     }
-
-    const result: TAccount[] = [];
-    const accountsList = Array.from(acctMap.keys()).sort();
-
-    for (const accountName of accountsList) {
-      const byMonth = acctMap.get(accountName)!;
-      let runningBalance = 0;
-      const monthGroups: TMonthGroup[] = [];
-      let grandDebit = 0;
-      let grandCredit = 0;
-
-      for (const my of allMonths) {
-        const byMod = byMonth.get(my);
-        const p = parseMonthYear(my);
-        const sortPrefix = p ? `${p.year}-${String(p.month).padStart(2, "0")}` : my;
-        const currentYear = p ? p.year.toString() : "Unknown";
-        const currentMonth = p ? parseMonthYear(my)?.month.toString() : "Unknown";
-        
-        const entries: TEntry[] = [];
-        let monthDebit = 0;
-        let monthCredit = 0;
-
-        if (byMod) {
-          for (const [mod, v] of byMod) {
-            const date = lastDayLabel(my);
-            const particulars = MODULE_PARTICULARS[mod] ?? mod;
-            const folio = folioFor(mod, my);
-            entries.push({
-              date, particulars, folio,
-              debit: v.dr, credit: v.cr,
-              sortKey: sortPrefix + mod
-            });
-            monthDebit = round2(monthDebit + v.dr);
-            monthCredit = round2(monthCredit + v.cr);
-          }
-        }
-        
-        entries.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-        
-        const begBalance = runningBalance;
-        runningBalance = round2(runningBalance + monthDebit - monthCredit);
-        
-        // Year/Month Filtering logic: 
-        // We still need to calculate balances for ALL months, 
-        // but only show the months that match the filter.
-        const yearMatch = selectedYear === "ALL" || selectedYear === currentYear;
-        const monthMatch = selectedMonth === "ALL" || my.startsWith(selectedMonth);
-
-        if (yearMatch && monthMatch) {
-          if (entries.length > 0 || begBalance !== 0 || runningBalance !== 0) {
-            monthGroups.push({
-              monthYear: my,
-              entries,
-              begBalance,
-              endBalance: runningBalance
-            });
-          }
-        }
-
-        grandDebit = round2(grandDebit + monthDebit);
-        grandCredit = round2(grandCredit + monthCredit);
-      }
-
-      if (monthGroups.length > 0) {
-        result.push({
-          accountName,
-          months: monthGroups,
-          totalDebit: grandDebit,
-          totalCredit: grandCredit,
-          finalBalance: runningBalance
-        });
-      }
-    }
-    return result;
-  }, [rows, allMonths, selectedYear, selectedMonth]);
+    return list;
+  }, [dataMap]);
 
   const filteredAccounts = useMemo(
     () => tAccounts.filter((a) => a.accountName.toLowerCase().includes(search.toLowerCase())),
     [tAccounts, search]
   );
-
-  function exportPDF() {
-    if (!settings) return;
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-
-    filteredAccounts.forEach((account, idx) => {
-      if (idx > 0) doc.addPage();
-
-      doc.setFontSize(14); doc.setFont("helvetica", "bold");
-      doc.text(settings.company_name, 148, 12, { align: "center" });
-      doc.setFontSize(9); doc.setFont("helvetica", "normal");
-      let y = 17;
-      if (settings.address) { doc.text(settings.address, 148, y, { align: "center" }); y += 4; }
-      if (settings.tin_no) { doc.text(`TIN: ${settings.tin_no}`, 148, y, { align: "center" }); y += 4; }
-      doc.setFontSize(11); doc.setFont("helvetica", "bold");
-      doc.text("GENERAL LEDGER", 148, y + 2, { align: "center" });
-      doc.setFontSize(10);
-      doc.text(account.accountName.toUpperCase(), 148, y + 8, { align: "center" });
-
-      const body: any[][] = [];
-      account.months.forEach(m => {
-        body.push([{ content: m.monthYear.toUpperCase(), colSpan: 5, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', halign: 'center' } }]);
-        body.push(["", "Beginning Balance", "", m.begBalance >= 0 ? fmtMoney(m.begBalance) : "", m.begBalance < 0 ? fmtMoney(Math.abs(m.begBalance)) : ""]);
-        m.entries.forEach(e => {
-          body.push([e.date, e.particulars, e.folio, e.debit > 0 ? fmtMoney(e.debit) : "", e.credit > 0 ? fmtMoney(e.credit) : ""]);
-        });
-        body.push([{ content: `Ending Balance: ${fmtMoney(m.endBalance)}`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [248, 250, 252] } }]);
-      });
-
-      autoTable(doc, {
-        startY: y + 12,
-        head: [["DATE", "PARTICULARS", "FOLIO", "DEBIT", "CREDIT"]],
-        body,
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [15, 39, 68], textColor: 255, fontStyle: "bold", halign: "center" },
-        columnStyles: {
-          3: { halign: "right", cellWidth: 35 },
-          4: { halign: "right", cellWidth: 35 },
-        },
-      });
-    });
-    doc.save(`GL_FULL_${new Date().toISOString().slice(0, 10)}.pdf`);
-  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
@@ -246,16 +309,8 @@ export default function GeneralLedger() {
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-white tracking-tighter">General Ledger</h2>
           <p className="text-sm text-white/40 font-medium">
-            Complete historical audit trail with continuous balance preservation.
+            T-Account format matching uploaded template. All cell borders enforced.
           </p>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10 h-11 px-6 rounded-xl" onClick={() => window.print()}>
-            <Printer className="h-4 w-4 mr-2" /> Print
-          </Button>
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/30 h-11 px-6 rounded-xl transition-all hover:scale-105 active:scale-95" disabled={!filteredAccounts.length} onClick={exportPDF}>
-            <FileText className="h-4 w-4 mr-2" /> Export full PDF
-          </Button>
         </div>
       </div>
 
@@ -270,36 +325,6 @@ export default function GeneralLedger() {
             />
           </div>
         </Card>
-        <Card className="md:col-span-3 p-4 bg-white/5 border-white/10 backdrop-blur-md rounded-2xl">
-          <div className="relative group">
-            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/20 group-focus-within:text-blue-400 transition-colors" />
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="w-full pl-12 pr-4 bg-black/20 border-white/10 text-white h-12 rounded-xl focus:ring-2 focus:ring-blue-500/50 outline-none appearance-none cursor-pointer"
-            >
-              <option value="ALL">All Years</option>
-              {years.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-        </Card>
-        <Card className="md:col-span-3 p-4 bg-white/5 border-white/10 backdrop-blur-md rounded-2xl">
-          <div className="relative group">
-            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/20 group-focus-within:text-blue-400 transition-colors" />
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full pl-12 pr-4 bg-black/20 border-white/10 text-white h-12 rounded-xl focus:ring-2 focus:ring-blue-500/50 outline-none appearance-none cursor-pointer"
-            >
-              <option value="ALL">All Months</option>
-              {MONTH_FULL.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-        </Card>
       </div>
 
       {loading ? (
@@ -308,7 +333,7 @@ export default function GeneralLedger() {
              <div className="absolute inset-0 blur-xl bg-blue-500/20 animate-pulse"></div>
              <Loader2 className="h-12 w-12 animate-spin text-blue-500 relative" />
           </div>
-          <span className="text-xs font-black tracking-[0.3em] uppercase text-blue-400/50">Recalculating Ledgers...</span>
+          <span className="text-xs font-black tracking-[0.3em] uppercase text-blue-400/50">Loading Ledgers...</span>
         </div>
       ) : filteredAccounts.length === 0 ? (
         <Card className="p-32 text-center bg-white/[0.02] border-dashed border-white/10 text-white/20 rounded-3xl">
@@ -325,7 +350,7 @@ export default function GeneralLedger() {
       ) : (
         <div className="space-y-12">
           {filteredAccounts.map((acct) => (
-            <TAccountCard key={acct.accountName} account={acct} settings={settings} />
+            <TAccountCard key={acct.accountName} data={acct} settings={settings!} />
           ))}
         </div>
       )}
@@ -333,118 +358,147 @@ export default function GeneralLedger() {
   );
 }
 
-function TAccountCard({ account, settings }: { account: TAccount; settings: CompanySettings | null }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+function TAccountCard({ data, settings }: { data: TAccountData, settings: CompanySettings }) {
+  const fmt = (n: number) => n > 0
+    ? n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '';
+
+  const maxRows = Math.max(data.debitRows.length, data.creditRows.length);
 
   return (
-    <div className="group relative">
-      <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-[2rem] blur-2xl opacity-0 group-hover:opacity-100 transition duration-1000"></div>
-      <Card className="relative overflow-hidden border-white/10 bg-[#0a1628]/80 backdrop-blur-2xl shadow-2xl rounded-3xl border">
-        <div 
-          className="p-6 flex items-center justify-between cursor-pointer border-b border-white/5 hover:bg-white/[0.02] transition-all"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          <div className="flex items-center gap-5">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-600/5 flex items-center justify-center border border-blue-500/20 shadow-inner group-hover:scale-110 transition-transform duration-500">
-              <span className="text-blue-400 font-black text-xl">{account.accountName[0].toUpperCase()}</span>
-            </div>
-            <div>
-              <h3 className="text-xl font-black text-white tracking-tight">{account.accountName}</h3>
-              <div className="flex items-center gap-3 mt-1">
-                <span className={cn(
-                  "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider",
-                  account.finalBalance >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
-                )}>
-                  {account.finalBalance >= 0 ? "DEBIT BALANCE" : "CREDIT BALANCE"}
-                </span>
-                <span className="text-xs font-mono font-bold text-white/40">
-                  {fmtMoney(account.finalBalance)}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 no-print">
-             <Button variant="ghost" size="sm" className="text-white/20 hover:text-white hover:bg-white/5 rounded-xl h-10 w-10 p-0 transition-colors">
-               <Download className="h-4 w-4" />
-             </Button>
-             <div className={cn("transition-transform duration-500", isExpanded ? "rotate-180" : "")}>
-                <Search className="h-4 w-4 text-white/20 rotate-45" />
-             </div>
-          </div>
+    <div style={{
+      marginBottom:  '32px',
+      border:        '1px solid #1e3a5f',
+      borderRadius:  '4px',
+      overflow:      'hidden',
+      background:    '#ffffff',
+      pageBreakAfter:'always',
+    }}>
+      <div style={{
+        background:     '#0f2744',
+        color:          '#ffffff',
+        padding:        '8px 16px',
+        display:        'flex',
+        justifyContent: 'space-between',
+        alignItems:     'center',
+      }}>
+        <span style={{ fontFamily:'Arial', fontWeight:700, fontSize:'0.88rem', letterSpacing:'0.05em' }}>
+          {data.accountName.toUpperCase()}
+        </span>
+        <div style={{ display:'flex', gap:'8px' }} className="no-print">
+          <button onClick={() => exportGLAccountExcel(data, settings)}
+            style={{ background:'#ffffff', color:'#000000', border:'1px solid #1e3a5f', borderRadius:'3px', padding:'5px 12px', fontFamily:'Arial', fontSize:'0.75rem', fontWeight:700, cursor:'pointer' }}>
+            📊 Export Excel
+          </button>
+          <button onClick={() => printGLAccount(data, settings)}
+            style={{ background:'#e2e8f0', color:'#000000', border:'1px solid #1e3a5f', borderRadius:'3px', padding:'5px 12px', fontFamily:'Arial', fontSize:'0.75rem', fontWeight:700, cursor:'pointer' }}>
+            🖨 Print
+          </button>
         </div>
+      </div>
 
-        {isExpanded && (
-          <div className="p-0 overflow-x-auto no-scrollbar">
-            <table className="w-full text-left border-collapse min-w-[950px]">
-              <thead>
-                <tr className="bg-white/[0.02]">
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.25em] text-white/20 border-b border-white/5">Date</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.25em] text-white/20 border-b border-white/5">Particulars</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.25em] text-white/20 border-b border-white/5">Folio</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.25em] text-white/20 border-b border-white/5 text-right">Debit</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.25em] text-white/20 border-b border-white/5 text-right">Credit</th>
-                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.25em] text-white/20 border-b border-white/5 text-right">Running</th>
-                </tr>
-              </thead>
-              <tbody className="text-[13px] font-medium">
-                {account.months.map((m) => {
-                  let monthRunning = m.begBalance;
-                  return (
-                    <React.Fragment key={m.monthYear}>
-                      {/* Month Separator */}
-                      <tr className="bg-blue-600/[0.03] group/month">
-                        <td colSpan={6} className="px-8 py-4 border-y border-white/5">
-                          <div className="flex items-center gap-3">
-                             <div className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-                             <span className="text-[11px] font-black text-blue-300 uppercase tracking-[0.3em]">
-                               {m.monthYear}
-                             </span>
-                          </div>
-                        </td>
-                      </tr>
-                      
-                      {/* Beginning Balance Row */}
-                      <tr className="bg-white/[0.01] text-white/30 italic text-[11px] border-b border-white/5">
-                        <td className="px-8 py-3"></td>
-                        <td className="px-8 py-3 font-bold uppercase tracking-widest text-blue-400/30">Beginning Balance</td>
-                        <td className="px-8 py-3"></td>
-                        <td className="px-8 py-3"></td>
-                        <td className="px-8 py-3"></td>
-                        <td className="px-8 py-3 text-right font-mono text-white/40">
-                          {fmtMoney(m.begBalance)}
-                        </td>
-                      </tr>
+      <div style={{ overflowX: 'auto' }}>
+      <table style={{ width:'100%', minWidth: '800px', borderCollapse:'collapse', fontFamily:'Arial,Helvetica,sans-serif', fontSize:'0.78rem' }}>
+        <thead>
+          <tr>
+            <th style={thStyle('left')}>DATE</th>
+            <th style={thStyle('left')}>PARTICULARS</th>
+            <th style={thStyle('center')}>FOLIO</th>
+            <th style={thStyle('right')}>DEBIT</th>
+            <th className="t-divider" style={{ width:'6px', background:'#0f2744', padding:0, border:'1px solid #0f2744' }}></th>
+            <th style={thStyle('left')}>DATE</th>
+            <th style={thStyle('left')}>PARTICULARS</th>
+            <th style={thStyle('center')}>FOLIO</th>
+            <th style={thStyle('right')}>CREDIT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: maxRows }, (_, i) => {
+            const dr = data.debitRows[i];
+            const cr = data.creditRows[i];
+            const bg = i % 2 === 0 ? '#ffffff' : '#f9fafb';
+            return (
+              <tr key={i} style={{ background: bg }}>
+                <td style={tdStyle('left')}>{dr?.date ?? ''}</td>
+                <td style={tdStyle('left')}>{dr?.particulars ?? ''}</td>
+                <td style={tdStyle('center')}>{dr?.folio ?? ''}</td>
+                <td style={tdStyle('right')}>{dr ? fmt(dr.amount) : ''}</td>
+                <td className="t-divider" style={{ background:'#0f2744', width:'6px', padding:0, border:'1px solid #0f2744' }}></td>
+                <td style={tdStyle('left')}>{cr?.date ?? ''}</td>
+                <td style={tdStyle('left')}>{cr?.particulars ?? ''}</td>
+                <td style={tdStyle('center')}>{cr?.folio ?? ''}</td>
+                <td style={tdStyle('right')}>{cr ? fmt(cr.amount) : ''}</td>
+              </tr>
+            );
+          })}
 
-                      {/* Transaction Rows */}
-                      {m.entries.map((e, idx) => {
-                        monthRunning = round2(monthRunning + e.debit - e.credit);
-                        return (
-                          <tr key={idx} className="hover:bg-white/[0.03] border-b border-white/5 transition-colors group/row">
-                            <td className="px-8 py-4 text-white/40 font-mono text-[11px]">{e.date}</td>
-                            <td className="px-8 py-4 text-white/90 group-hover/row:text-white transition-colors">{e.particulars}</td>
-                            <td className="px-8 py-4 text-white/20 text-[11px] font-mono">{e.folio}</td>
-                            <td className="px-8 py-4 text-right text-emerald-400/90 font-mono">{e.debit > 0 ? fmtMoney(e.debit) : ""}</td>
-                            <td className="px-8 py-4 text-right text-rose-400/90 font-mono">{e.credit > 0 ? fmtMoney(e.credit) : ""}</td>
-                            <td className="px-8 py-4 text-right text-blue-300/60 font-mono">{fmtMoney(monthRunning)}</td>
-                          </tr>
-                        );
-                      })}
+          {(data.balanceDR > 0 || data.balanceCR > 0) && (
+            <tr style={{ background:'#fef9c3', fontStyle:'italic', fontWeight:600 }}>
+              <td style={tdStyle('left')}></td>
+              <td style={tdStyle('left')}>Balance c/d</td>
+              <td style={tdStyle('center')}></td>
+              <td style={tdStyle('right')}>{data.balanceDR > 0 ? fmt(data.balanceDR) : ''}</td>
+              <td className="t-divider" style={{ background:'#0f2744', width:'6px', padding:0, border:'1px solid #0f2744' }}></td>
+              <td style={tdStyle('left')}></td>
+              <td style={tdStyle('left')}>Balance c/d</td>
+              <td style={tdStyle('center')}></td>
+              <td style={tdStyle('right')}>{data.balanceCR > 0 ? fmt(data.balanceCR) : ''}</td>
+            </tr>
+          )}
 
-                      {/* Ending Balance Row */}
-                      <tr className="bg-blue-600/[0.02] border-b-2 border-white/10">
-                        <td colSpan={5} className="px-8 py-5 text-right uppercase tracking-[0.2em] text-white/20 text-[10px] font-black">Ending Balance — {m.monthYear}</td>
-                        <td className="px-8 py-5 text-right font-mono text-blue-300 font-bold decoration-blue-500/50 decoration-2 underline-offset-8">
-                          {fmtMoney(m.endBalance)}
-                        </td>
-                      </tr>
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+          <tr style={{ background:'#dbeafe', fontWeight:700 }}>
+            <td style={tdTotalStyle('left')}></td>
+            <td style={tdTotalStyle('left')}>TOTAL</td>
+            <td style={tdTotalStyle('center')}></td>
+            <td style={tdTotalStyle('right')}>{fmt(data.grandTotal)}</td>
+            <td className="t-divider" style={{ background:'#0f2744', width:'6px', padding:0, border:'1px solid #0f2744' }}></td>
+            <td style={tdTotalStyle('left')}></td>
+            <td style={tdTotalStyle('left')}>TOTAL</td>
+            <td style={tdTotalStyle('center')}></td>
+            <td style={tdTotalStyle('right')}>{fmt(data.grandTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
     </div>
   );
 }
+
+const BORDER = '1px solid #cbd5e1';
+function thStyle(align: string) {
+  return {
+    background:    '#0f2744',
+    color:         '#ffffff',
+    fontFamily:    'Arial, Helvetica, sans-serif',
+    fontWeight:    700,
+    fontSize:      '0.73rem',
+    padding:       '7px 10px',
+    textAlign:     align as any,
+    border:        '1px solid #1e3a5f',
+    whiteSpace:    'nowrap' as any,
+    letterSpacing: '0.04em',
+  };
+}
+function tdStyle(align: string) {
+  return {
+    padding:    '5px 10px',
+    color:      '#000000',
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize:   '0.78rem',
+    border:     BORDER,
+    textAlign:  align as any,
+  };
+}
+function tdTotalStyle(align: string) {
+  return {
+    padding:    '7px 10px',
+    color:      '#000000',
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize:   '0.8rem',
+    fontWeight: 700,
+    border:     '1px solid #93c5fd',
+    borderTop:  '2px double #000000',
+    textAlign:  align as any,
+  };
+}
+

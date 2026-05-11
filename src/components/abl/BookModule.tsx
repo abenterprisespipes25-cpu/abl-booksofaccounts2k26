@@ -49,9 +49,47 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         .order("entry_date", { ascending: true })
         .limit(5000);
       const list = data ?? [];
-      const subKey = moduleId === "cdb" || moduleId === "purchase_book" ? "sundries_acct_title" : null;
-      const sortKey = moduleId === "cdb" ? "check_voucher_no" : moduleId === "purchase_book" ? "invoice_no" : null;
-      const parentMarker = moduleId === "cdb" ? "check_no" : moduleId === "purchase_book" ? "invoice_no" : null;
+
+      if (moduleId === "cdb") {
+        const parents = list.filter(r => r.allSplitRows_json);
+        const flattened = parents.flatMap(tx => {
+          const splitRows = JSON.parse(tx.allSplitRows_json || '[]');
+          
+          if (splitRows.length === 0) {
+            return [{
+              id: tx.id,
+              date: tx.entry_date,
+              payee: tx.payee,
+              particulars: tx.particulars,
+              voucher_no: tx.check_voucher_no,
+              check_no: tx.check_no,
+              fund: tx.fund,
+              account: tx.fund ? `CIB:${tx.fund}` : "",
+              debit: null,
+              credit: tx.cash_amount
+            }];
+          }
+          
+          return splitRows.map((split: any, idx: number) => ({
+            id: `${tx.id}-${idx}`,
+            date: tx.entry_date,
+            payee: tx.payee,
+            particulars: split.memo || tx.particulars,
+            voucher_no: tx.check_voucher_no,
+            check_no: tx.check_no,
+            fund: tx.fund,
+            account: split.account,
+            debit: split.debit > 0 ? split.debit : null,
+            credit: split.credit > 0 ? split.credit : null
+          }));
+        });
+        setRows(flattened);
+        return;
+      }
+
+      const subKey = moduleId === "purchase_book" ? "sundries_acct_title" : null;
+      const sortKey = moduleId === "purchase_book" ? "invoice_no" : null;
+      const parentMarker = moduleId === "purchase_book" ? "invoice_no" : null;
       
       if (sortKey && subKey && parentMarker) {
         const groups: any[][] = [];

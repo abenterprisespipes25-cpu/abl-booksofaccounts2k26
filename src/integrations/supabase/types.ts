@@ -82,6 +82,7 @@ export type Database = {
           sundries_cr: number | null
           sundries_dr: number | null
           sundry_parent_id: string | null
+          allSplitRows_json: string | null
           travel_admin: number | null
           travel_construction: number | null
           travel_sales: number | null
@@ -119,6 +120,7 @@ export type Database = {
           sundries_cr?: number | null
           sundries_dr?: number | null
           sundry_parent_id?: string | null
+          allSplitRows_json?: string | null
           travel_admin?: number | null
           travel_construction?: number | null
           travel_sales?: number | null
@@ -156,6 +158,7 @@ export type Database = {
           sundries_cr?: number | null
           sundries_dr?: number | null
           sundry_parent_id?: string | null
+          allSplitRows_json?: string | null
           travel_admin?: number | null
           travel_construction?: number | null
           travel_sales?: number | null

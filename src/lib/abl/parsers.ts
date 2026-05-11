@@ -267,7 +267,14 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       }
       entry.sundries_acct_title = ""; entry.sundries_dr = 0; entry.sundries_cr = 0;
       for (const f of CDB_FIELD_TO_GL) if (f.side === "cr" && entry[f.field] > 0) entry[f.field] = round2(-entry[f.field]);
-      entry.cash_amount = round2(totalCredits || 0);
+      const splitRows = current.splits.map(sp => ({
+        account: String(sp[COL_ACCT] ?? "").trim(),
+        debit: num(sp[COL_DR]),
+        credit: num(sp[COL_CR]),
+        memo: String(sp[COL_MEMO] ?? "").trim()
+      }));
+
+      entry.allSplitRows_json = JSON.stringify(splitRows);
       allParsed.push(entry);
 
       for (const s of sundryLines) {
@@ -279,6 +286,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           itw_compensation: 0, itw_at_source: 0, sss_phic_hdmf_prem: 0, sss_hdmf_loan: 0, outside_services_construction: 0,
           travel_admin: 0, travel_sales: 0, travel_construction: 0, travel_water: 0, sales_comm_3rd_party: 0,
           delivery_expenses: 0, advances_officers_emp: 0, sundries_acct_title: s.title, sundries_dr: s.dr, sundries_cr: s.cr,
+          allSplitRows_json: null
         });
       }
       current = null;

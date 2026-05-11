@@ -51,6 +51,52 @@ export async function exportExcel(opts: {
 
   const ws = XLSX.utils.aoa_to_sheet(headerAoa);
   ws["!cols"] = columns.map((c) => ({ wch: Math.max(10, Math.floor((c.width || 100) / 7)) }));
+
+  const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:A1');
+  const borderAll = { top:{style:'thin',color:{rgb:'CBD5E1'}}, bottom:{style:'thin',color:{rgb:'CBD5E1'}}, left:{style:'thin',color:{rgb:'CBD5E1'}}, right:{style:'thin',color:{rgb:'CBD5E1'}} };
+  const borderDouble = { top:{style:'double',color:{rgb:'000000'}} };
+
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({r:R, c:C});
+      if (!ws[addr]) ws[addr] = {t:'z', v:null};
+
+      const isHeaderArea = R < lines.length + 1; // company name, etc.
+      const isColHeader = R === lines.length + 1;
+      const isTotalRow = R === headerAoa.length - 1;
+      const isDataRow = R > lines.length + 1 && !isTotalRow;
+
+      if (!isHeaderArea) {
+        ws[addr].s = {
+          font: {
+            name:  'Arial',
+            sz:    isColHeader || isTotalRow ? 10 : 9,
+            bold:  isColHeader || isTotalRow,
+            color: { rgb: isColHeader ? 'FFFFFF' : '000000' },
+          },
+          fill: isColHeader
+            ? { fgColor: { rgb: '0F2744' }, patternType: 'solid' }
+            : isTotalRow
+            ? { fgColor: { rgb: 'DBEAFE' }, patternType: 'solid' }
+            : (R % 2 === 0 ? { fgColor: { rgb: 'FFFFFF' }, patternType: 'solid' } : { fgColor: { rgb: 'F9FAFB' }, patternType: 'solid' }),
+          border: isTotalRow ? { ...borderAll, top: borderDouble.top } : borderAll,
+          alignment: {
+            horizontal: columns[C]?.type === 'currency' ? 'right' : 'left',
+            vertical:   'center',
+            wrapText:   false,
+          },
+          numFmt: columns[C]?.type === 'currency' ? '#,##0.00' : undefined,
+        };
+      } else {
+        // Title area formatting
+        ws[addr].s = {
+          font: { name: 'Arial', sz: R === 0 ? 12 : 10, bold: true },
+          alignment: { horizontal: 'center' }
+        };
+      }
+    }
+  }
+
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
   XLSX.writeFile(wb, filename);
 }
