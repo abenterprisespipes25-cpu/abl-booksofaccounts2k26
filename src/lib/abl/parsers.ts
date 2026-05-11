@@ -388,7 +388,9 @@ const PB_EXACT: Record<string, string> = {
   "Selling Expenses:Selling-Fuel, Oil and Lubricants": "fuel_sales",
   "Cost of Construction:Cons-Fuel, Oil and Lubricants": "fuel_construction",
   "Withholding Tax Payable - Expanded - Top Corp.": "itw_top_10t",
+  "Withholding Tax Payable - Expanded - at Source": "itw_top_10t",
 };
+
 
 const PB_FIELD_TO_GL: Array<{ field: string; account: string; side: "dr" | "cr" }> = [
   { field: "ap_trade_cr", account: "Accounts Payable", side: "cr" },
@@ -505,19 +507,23 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
           entry.ap_trade_cr = round2(entry.ap_trade_cr + cr);
         } else if (acct.toLowerCase().includes("input")) {
           entry.input_tax = round2(entry.input_tax + dr);
-
-        } else if (acct.startsWith("Cost of Construction:") && acct.toLowerCase().includes("fuel")) {
-          entry.fuel_construction = round2((entry.fuel_construction || 0) + dr);
+        } else if (acct.toLowerCase().includes("repairs and maintenance")) {
+          if (acct.includes("G&A")) entry.repairs_admin = round2((entry.repairs_admin || 0) + dr);
+          else if (acct.includes("Selling")) entry.repairs_sales = round2((entry.repairs_sales || 0) + dr);
+          else if (acct.includes("Overhead") || acct.includes("OH-")) entry.repairs_plant = round2((entry.repairs_plant || 0) + dr);
+          else entry.repairs_admin = round2((entry.repairs_admin || 0) + dr); // default to admin
+        } else if (acct.toLowerCase().includes("fuel") || acct.toLowerCase().includes("lubricants")) {
+          if (acct.includes("G&A")) entry.fuel_admin = round2((entry.fuel_admin || 0) + dr);
+          else if (acct.includes("Selling")) entry.fuel_sales = round2((entry.fuel_sales || 0) + dr);
+          else if (acct.includes("Overhead") || acct.includes("OH-")) entry.fuel_plant = round2((entry.fuel_plant || 0) + dr);
+          else if (acct.includes("Cons-") || acct.includes("Construction")) entry.fuel_construction = round2((entry.fuel_construction || 0) + dr);
+          else entry.fuel_admin = round2((entry.fuel_admin || 0) + dr); // default
         } else {
           const field = PB_EXACT[acct];
           if (field) {
-            // User says ITW TOP 10T should be negative (it's a credit in column H)
             const amt = field === "itw_top_10t" ? -cr : dr;
             entry[field] = round2((entry[field] || 0) + amt);
           } else {
-
-
-
             sundries.push({
               pb_entry_id: entryId,
               acct_title: acct,
@@ -525,6 +531,7 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
             });
           }
         }
+
       }
 
       // Handle the header row's account if it's not a split row
