@@ -117,9 +117,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return {
       count: rows.length,
       totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount), 0),
-      totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax), 0),
-      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t), 0),
+      totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax || r.vat_input_tax), 0),
+      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top_10k_corp || r.itw_compensation || r.itw_at_source), 0),
     };
+
   }, [rows]);
 
 
@@ -147,9 +148,14 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   useEffect(() => { if (active) loadRows(active); }, [active, loadRows]);
 
   async function handleFile(file: File) {
+    if (moduleId === "purchase_book" && !file.name.toLowerCase().includes("purchase+book")) {
+      toast.error("Invalid file. Please upload 'Purchase Book' file only.");
+      return;
+    }
+
     setUploading(true);
-    const loaderId = toast.loading(`Processing ${file.name}...`);
     try {
+
       const buf = await file.arrayBuffer();
       const parsed = PARSERS[moduleId](buf);
       const monthsInFile = Array.from(new Set(parsed.rows.map((r: any) => r.month_year))).filter(Boolean) as string[];
@@ -165,13 +171,19 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       
       if (conflictMonths.length > 0) {
         setPending({ parsed, fileName: file.name, conflictMonths });
-        toast.dismiss(loaderId);
       } else {
+        // Strict month validation: If a tab is active, ensure the file contains that month
+        if (active && !monthsInFile.includes(active)) {
+          toast.error(`Invalid month. The file does not contain transactions for ${active}.`);
+          return;
+        }
         await commit(parsed, file.name);
       }
+
     } catch (e: any) {
-      toast.error(`Upload error: ${e.message || e}`, { id: loaderId });
+      toast.error(`Upload error: ${e.message || e}`);
     } finally {
+
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
