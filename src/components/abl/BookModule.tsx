@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { MODULES, ModuleId } from "@/lib/abl/config";
-import { sortMonthYears, monthYearToTabLabel } from "@/lib/abl/format";
+import { sortMonthYears, monthYearToTabLabel, fmtMoney } from "@/lib/abl/format";
+
 import { parseCDB, parsePurchaseBook, parseSalesBook, parseCashReceipts, ParsedResult } from "@/lib/abl/parsers";
 import { exportExcel, exportPDF } from "@/lib/abl/exporters";
 import { MonthTabs } from "./MonthTabs";
@@ -56,11 +57,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       const entryIds = list.map(r => r.id);
 
       if (moduleId === "cdb") {
-        // Sundries are embedded directly in each cdb_entries row (sundries_acct_title, sundries_dr, sundries_cr)
-        // No separate cdb_sundries table fetch needed.
         setRows(list);
       } else if (moduleId === "purchase_book") {
-        // Fetch sundries for Purchase Book
         const { data: sundries } = await supabase
           .from("pb_sundries")
           .select("*")
@@ -108,6 +106,22 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       setSyncing(false);
     }
   }, [meta.tableName, meta.columns, moduleId]);
+  
+  const stats = useMemo(() => {
+    const n = (v: any) => {
+      if (!v) return 0;
+      if (typeof v === "number") return v;
+      const parsed = parseFloat(String(v).replace(/[,\s]/g, ""));
+      return isNaN(parsed) ? 0 : parsed;
+    };
+    return {
+      count: rows.length,
+      totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount), 0),
+      totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax), 0),
+      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t), 0),
+    };
+  }, [rows]);
+
 
   // Subscribe to real-time changes
   useEffect(() => {
@@ -293,6 +307,26 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           </Button>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Transactions</p>
+          <p className="text-xl font-black text-white">{stats.count}</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total Purchases</p>
+          <p className="text-xl font-black text-white">{fmtMoney(stats.totalAmount)}</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total VAT/Input</p>
+          <p className="text-xl font-black text-emerald-400">{fmtMoney(stats.totalVat)}</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total ITW</p>
+          <p className="text-xl font-black text-red-400">{fmtMoney(stats.totalItw)}</p>
+        </div>
+      </div>
+
 
       {months.length > 0 && (
         <MonthTabs months={months} active={active} onSelect={setActive} />

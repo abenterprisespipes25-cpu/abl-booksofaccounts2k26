@@ -436,9 +436,12 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
 
 
       const iso = toISODate(row[0]);
-      const isHeaderRow = iso !== null && colC !== '' && colE !== '';
+      const type = colB.toLowerCase();
+      // Only process "Bill" or "Item Receipt" types as per user request to avoid Journal Entry duplication
+      const isHeaderRow = iso !== null && colC !== '' && colE !== '' && (type.includes("bill") || type.includes("item receipt"));
 
       if (isHeaderRow) {
+
         if (currentHeader) transactions.push(currentHeader);
         currentHeader = {
           date: iso,
