@@ -99,14 +99,26 @@ function findColIdx(headerRow: any[], labels: string[], fallback: number): numbe
 
 function toISODate(v: any): string | null {
   if (!v) return null;
+  // Date object (cellDates: true)
   if (v instanceof Date && !isNaN(v.getTime())) {
     const y = v.getFullYear();
     const m = String(v.getMonth() + 1).padStart(2, "0");
     const d = String(v.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }
+  // Excel serial number (e.g. 45658 = Jan 1 2025)
+  if (typeof v === "number" && v > 1000) {
+    const date = new Date((v - 25569) * 86400000);
+    if (!isNaN(date.getTime())) {
+      const y = date.getUTCFullYear();
+      const mo = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      return `${y}-${mo}-${day}`;
+    }
+  }
   const s = String(v).trim();
   if (!s) return null;
+  // MM/DD/YYYY or MM-DD-YYYY
   const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
   if (m) {
     let [, mm, dd, yy] = m;
@@ -114,10 +126,14 @@ function toISODate(v: any): string | null {
     if (year < 100) year += 2000;
     return `${year}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
   }
+  // YYYY-MM-DD already
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
   const d = new Date(s);
   if (!isNaN(d.getTime())) return toISODate(d);
   return null;
 }
+
+
 
 function naturalSort(a: string, b: string): number {
   const segmentize = (s: string) =>
@@ -158,10 +174,13 @@ function num(v: any): number {
   return isNaN(n) ? 0 : n;
 }
 
-function monthYearFromISO(iso: string): string {
+function monthYearFromISO(iso: string | null): string {
+  if (!iso) return "";
   const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
   return dateToMonthYear(d);
 }
+
 
 // ---------- CDB ----------
 const CDB_FIXED_MAPPING: Record<string, { field: string; match_type?: "startswith" }> = {
@@ -193,7 +212,8 @@ const CDB_FIXED_MAPPING: Record<string, { field: string; match_type?: "startswit
 };
 
 const CDB_FIXED_FIELDS = new Set(Object.values(CDB_FIXED_MAPPING).map(v => v.field));
-const CREDIT_FIELDS_CDB = new Set(["itw_top_10k_corp", "itw_compensation", "itw_at_source"]);
+const CREDIT_FIELDS_CDB = new Set(["itw_top_10k_corp", "itw_compensation", "itw_at_source", "sss_phic_hdmf_prem", "sss_hdmf_loan"]);
+
 
 export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });

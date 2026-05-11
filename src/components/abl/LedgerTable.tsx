@@ -1,11 +1,14 @@
 import { ColumnDef } from "@/lib/abl/config";
 import { fmtDate, fmtMoney } from "@/lib/abl/format";
+import React from "react";
 
-// Helper
-const fmt = (val: any, type: string) => {
+// Helper: format a cell value by column type
+const fmtCell = (val: any, type: string) => {
   if (type === "currency") {
     const n = Number(val);
-    return (!val || n === 0) ? "" : n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (!val || n === 0) return "";
+    // fmtMoney shows negatives as (44.00)
+    return fmtMoney(n);
   }
   if (type === "date") return fmtDate(val);
   return val ?? "";
@@ -125,8 +128,8 @@ export function LedgerTable({
                         c.type === "currency" ? "right" : "left", r._is_sub_row
                       )}>
                         {c.type === "currency"
-                          ? (isEmpty ? "" : fmt(val, "currency"))
-                          : fmt(val, c.type)}
+                          ? (isEmpty ? "" : fmtCell(val, "currency"))
+                          : fmtCell(val, c.type)}
                       </td>
                     );
                   })}
@@ -141,7 +144,7 @@ export function LedgerTable({
                 {columns.map((c, i) => (
                   <td key={i} style={TFOOT_STYLE(c.type === "currency" ? "right" : i === 0 ? "left" : "center")}>
                     {c.type === "currency"
-                      ? (totals[c.field] ? totals[c.field].toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "")
+                      ? (totals[c.field] ? fmtMoney(totals[c.field]) : "")
                       : i === 0 ? "TOTAL" : ""}
                   </td>
                 ))}
