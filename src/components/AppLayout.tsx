@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { getCompanySettings } from "@/lib/abl/companySettings";
+import { supabase } from "@/integrations/supabase/client";
 
 const NAV = [
   { to: "/", label: "Home", end: true },
@@ -17,8 +18,20 @@ const NAV = [
 
 export default function AppLayout() {
   const [companyName, setCompanyName] = useState("");
+  
   useEffect(() => {
-    getCompanySettings().then((s) => setCompanyName(s.company_name));
+    const fetch = () => getCompanySettings().then((s) => setCompanyName(s.company_name));
+    fetch();
+
+    const channel = supabase.channel('company_settings_layout')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'company_settings' }, () => {
+        fetch();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   return (

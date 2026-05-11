@@ -12,6 +12,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+
 const ALL_TABLES = [
   "uploaded_files", "cdb_entries", "purchase_book_entries",
   "sales_book_entries", "cash_receipts_entries", "gl_entries",
@@ -73,7 +75,7 @@ export default function Maintenance() {
         if (error) throw new Error(error.message);
         if (data) setCompanyId(data.id);
       }
-      toast.success("Company settings saved.");
+      toast.success("✅ Company settings saved successfully!");
     } catch (e: any) {
       toast.error(`Save failed: ${e.message || e}`);
     } finally {
@@ -93,6 +95,25 @@ export default function Maintenance() {
   useEffect(() => {
     loadCompany();
     loadUploads();
+
+    // Subscribe to company_settings
+    const companyChannel = supabase.channel('company_settings_realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'company_settings' }, () => {
+        loadCompany();
+      })
+      .subscribe();
+
+    // Subscribe to uploaded_files
+    const uploadChannel = supabase.channel('uploads_realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'uploaded_files' }, () => {
+        loadUploads();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(companyChannel);
+      supabase.removeChannel(uploadChannel);
+    };
   }, []);
 
   async function backup() {
@@ -178,6 +199,7 @@ export default function Maintenance() {
 
   return (
     <div className="space-y-6">
+      <SyncStatusBadge />
       <div>
         <h2 className="text-lg font-bold text-primary">Maintenance</h2>
         <p className="text-xs text-muted-foreground">Backup, restore, and manage uploaded data.</p>

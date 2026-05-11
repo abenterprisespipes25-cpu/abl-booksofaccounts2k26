@@ -117,79 +117,80 @@ export default function CDBReportGenerator() {
       const colCr = headers.findIndex(h => h === 'credit');
 
       const result: GeneratedRow[] = [];
-      let currentDate = "";
-      let currentPayee = "";
-      let currentParticulars = "";
-      let currentRef = "";
-      let currentType = "";
+      let currentHeader: any = null;
 
       for (let i = headerIdx + 1; i < rawData.length; i++) {
         const r = rawData[i];
-        if (!r[colAcct] && !r[colDr] && !r[colCr]) continue;
+        if (!r || r.every(cell => String(cell).trim() === '')) continue;
 
-        const dateVal = r[colDate];
-        if (dateVal) {
-          currentDate = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
-        }
-        if (r[colName]) currentPayee = String(r[colName]);
-        if (r[colDesc]) currentParticulars = String(r[colDesc]);
-        if (r[colRef]) currentRef = String(r[colRef]);
-        
-        // Try to determine if it's a Check or Petty Cash based on "No." or "Type" if colType existed
-        // Since we don't have colType, we'll use No. logic or default to Check
-        const isPetty = currentRef.toUpperCase().includes('PCV');
-        const pcvNo = isPetty ? currentRef : "";
-        const cvNo = !isPetty ? currentRef : "";
-
-        const account = String(r[colAcct] || "").toUpperCase();
+        const colA = String(r[colDate] ?? '').trim();
+        const colC = String(r[colRef] ?? '').trim();
+        const colD = String(r[colName] ?? '').trim();
+        const colAcctVal = String(r[colAcct] ?? '').trim();
         const debit = parseFloat(String(r[colDr]).replace(/,/g, '')) || 0;
         const credit = parseFloat(String(r[colCr]).replace(/,/g, '')) || 0;
 
-        if (debit === 0 && credit === 0) continue;
+        const isHeaderRow = colA !== '' && colC !== '' && colD !== '';
 
-        // Auto-mapping logic
-        let matchedColId = "";
-        
-        if (credit > 0) {
-          if (account.includes("PAYABLE")) {
-            matchedColId = "ACCOUNTS_PAYABLE_TRADE";
-          } else {
-            matchedColId = "CASH_AMOUNT";
-          }
-        } else if (debit > 0) {
-          for (const col of columns) {
-            if (col.keywords.some(kw => account.includes(kw.toUpperCase()))) {
-              matchedColId = col.id;
-              break;
+        if (isHeaderRow) {
+          const iso = r[colDate] instanceof Date ? r[colDate].toISOString().split('T')[0] : String(r[colDate]);
+          const isPetty = colC.toUpperCase().includes('PCV');
+          currentHeader = {
+            date: iso,
+            payee: colD,
+            particulars: String(r[colDesc] ?? ''),
+            pcvNo: isPetty ? colC : "",
+            cvNo: !isPetty ? colC : "",
+            checkNo: "",
+            fund: "",
+            amounts: {}
+          };
+          result.push(currentHeader);
+        }
+
+        if (currentHeader && colAcctVal !== '') {
+          const account = colAcctVal.toUpperCase();
+          
+          // Auto-mapping logic
+          let matchedColId = "";
+          if (credit > 0) {
+            if (account.includes("PAYABLE")) {
+              matchedColId = "ACCOUNTS_PAYABLE_TRADE";
+            } else {
+              matchedColId = "CASH_AMOUNT";
+            }
+          } else if (debit > 0) {
+            for (const col of columns) {
+              if (col.keywords.some(kw => account.includes(kw.toUpperCase()))) {
+                matchedColId = col.id;
+                break;
+              }
             }
           }
-        }
 
-        let existingRow = result.find(x => x.date === currentDate && x.payee === currentPayee && x.particulars === currentParticulars && (x.pcvNo === pcvNo || x.cvNo === cvNo));
-        if (!existingRow) {
-          existingRow = { 
-            date: currentDate, 
-            payee: currentPayee, 
-            particulars: currentParticulars, 
-            pcvNo, cvNo, checkNo: "", fund: "",
-            amounts: {} 
-          };
-          result.push(existingRow);
-        }
-
-        if (matchedColId) {
-          existingRow.amounts[matchedColId] = (existingRow.amounts[matchedColId] || 0) + (debit > 0 ? debit : credit);
-        } else {
-          if (!existingRow.sundryTitle) {
-            existingRow.sundryTitle = account;
-            existingRow.sundryDr = debit;
-            existingRow.sundryCr = credit;
+          if (matchedColId) {
+            currentHeader.amounts[matchedColId] = (currentHeader.amounts[matchedColId] || 0) + (debit > 0 ? debit : credit);
           } else {
-            result.push({
-              date: "", payee: "", particulars: "", pcvNo: "", cvNo: "", checkNo: "", fund: "",
-              amounts: {},
-              sundryTitle: account, sundryDr: debit, sundryCr: credit
-            });
+            if (!currentHeader.sundryTitle) {
+              currentHeader.sundryTitle = account;
+              currentHeader.sundryDr = debit;
+              currentHeader.sundryCr = credit;
+            } else {
+              // Add a sub-row for extra sundries
+              result.push({
+                date: currentHeader.date,
+                payee: currentHeader.payee,
+                particulars: "",
+                pcvNo: "",
+                cvNo: "",
+                checkNo: "",
+                fund: "",
+                amounts: {},
+                sundryTitle: account,
+                sundryDr: debit,
+                sundryCr: credit
+              });
+            }
           }
         }
       }

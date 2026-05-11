@@ -387,3 +387,68 @@ html, body, #root { background-color: #0a1628; }
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   FIX — REAL-TIME AUTO SYNC STYLES
+   ═══════════════════════════════════════════════════════ */
+
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: #00aaff;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.sync-badge {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: rgba(0, 200, 100, 0.15);
+  border: 1px solid rgba(0, 200, 100, 0.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #00c864;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+  z-index: 1001;
+}
+
+.sync-badge.syncing {
+  background: rgba(255, 170, 0, 0.15);
+  border-color: rgba(255, 170, 0, 0.3);
+  color: #ffaa00;
+}
+
+.sync-badge.offline {
+  background: rgba(255, 0, 0, 0.15);
+  border-color: rgba(255, 0, 0, 0.3);
+  color: #ff0000;
+}
+
+.sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00c864;
+  animation: blink 1.5s infinite;
+}
+
+.syncing .sync-dot { background: #ffaa00; }
+.offline .sync-dot { background: #ff0000; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}

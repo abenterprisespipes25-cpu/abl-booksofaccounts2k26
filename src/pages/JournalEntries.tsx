@@ -1,5 +1,4 @@
-// Journal Entries — manual accountant journal vouchers with auto GL posting.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { dateToMonthYear, fmtDate, fmtMoney, folioFor, round2 } from "@/lib/abl/format";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getCompanySettings } from "@/lib/abl/companySettings";
 import "@/styles/print.css";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 
 interface Line {
   id?: string;
@@ -55,8 +55,8 @@ export default function JournalEntries() {
   const [editing, setEditing] = useState<Journal | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Journal | null>(null);
 
-  async function load() {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const [{ data: heads }, { data: lines }] = await Promise.all([
       supabase.from("journal_entries").select("*").order("entry_date", { ascending: false }).limit(2000),
       supabase.from("journal_entry_lines").select("*").order("line_order", { ascending: true }).limit(20000),
@@ -71,8 +71,21 @@ export default function JournalEntries() {
     }
     setJournals(((heads ?? []) as any[]).map((h) => ({ ...h, lines: linesByJ.get(h.id) || [] })));
     setLoading(false);
-  }
-  useEffect(() => { load(); }, []);
+  }, []);
+
+  useEffect(() => { 
+    load(); 
+
+    const channel = supabase.channel('journal_realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'journal_entries' }, () => {
+        load(true);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -232,6 +245,7 @@ export default function JournalEntries() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <SyncStatusBadge table="journal_entries" />
       <div className="flex flex-wrap items-center justify-between gap-4 p-6 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md no-print">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">Journal Entries</h2>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getCompanySettings, CompanySettings } from "@/lib/abl/companySettings";
 import { Card } from "@/components/ui/card";
@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Search, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import React from "react";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import { toast } from "sonner";
 
 interface GLEntry {
   account_name: string;
@@ -260,34 +262,54 @@ function printGLAccount(data: TAccountData, settings: CompanySettings) {
   if (w) { w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>{w.print();},600); }
 }
 
+
+
 export default function GeneralLedger() {
   const [dataMap, setDataMap] = useState<Map<string, GLEntry[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [settings, setSettings] = useState<CompanySettings | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const [{ data }, s] = await Promise.all([
-        supabase.from('gl_entries')
-          .select('account_name, entry_date, month_year, source_module, folio, particulars, debit, credit')
-          .order('entry_date', { ascending: true })
-          .limit(20000),
-        getCompanySettings(),
-      ]);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    const [{ data }, s] = await Promise.all([
+      supabase.from('gl_entries')
+        .select('account_name, entry_date, month_year, source_module, folio, particulars, debit, credit')
+        .order('entry_date', { ascending: true })
+        .limit(20000),
+      getCompanySettings(),
+    ]);
 
-      const map = new Map<string, GLEntry[]>();
-      for (const row of data ?? []) {
-        const key = row.account_name.trim();
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(row as any);
-      }
-      setDataMap(map);
-      setSettings(s);
-      setLoading(false);
-    })();
+    const map = new Map<string, GLEntry[]>();
+    for (const row of data ?? []) {
+      const key = row.account_name.trim();
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(row as any);
+    }
+    setDataMap(map);
+    setSettings(s);
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    fetchData();
+
+    // Real-time subscription
+    const channel = supabase.channel('gl_realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'gl_entries' }, (payload) => {
+        console.log('GL Real-time change:', payload);
+        fetchData(true);
+        if (payload.event === 'INSERT') {
+          // Summary toast (debounced would be better, but simple toast for now)
+          toast.info("✅ General Ledger updated with new entries.", { id: 'gl-update' });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
 
   const tAccounts = useMemo(() => {
     const list: TAccountData[] = [];
@@ -305,6 +327,7 @@ export default function GeneralLedger() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
+      <SyncStatusBadge table="gl_entries" />
       <div className="flex flex-wrap gap-4 items-end justify-between no-print bg-white/5 p-8 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-white tracking-tighter">General Ledger</h2>

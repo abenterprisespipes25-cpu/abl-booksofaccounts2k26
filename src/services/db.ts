@@ -10,11 +10,13 @@ const DB_VERSION = 1;
 const STORES = [
   'cash_receipts_entries',
   'cdb_entries',
+  'cdb_sundries',
   'company_settings',
   'gl_entries',
   'journal_entries',
   'journal_entry_lines',
   'purchase_book_entries',
+  'pb_sundries',
   'sales_book_entries',
   'uploaded_files',
 ] as const;
@@ -202,6 +204,12 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
           inserted.push(row);
         }
         await tx.done;
+        
+        // Notify subscribers
+        for (const row of inserted) {
+          notifySubscribers(this._table, 'INSERT', row);
+        }
+
         if (this._isSingle) return { data: inserted[0] ?? null, error: null };
         if (this._isMaybeSingle) return { data: inserted[0] ?? null, error: null };
         return { data: inserted, error: null };
@@ -211,11 +219,20 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
       if (this._operation === 'update') {
         const all: any[] = await db.getAll(this._table);
         const toUpdate = this._applyFilters(all);
+        const updatedRows: any[] = [];
         const tx = db.transaction(this._table as StoreName, 'readwrite');
         for (const row of toUpdate) {
-          await tx.store.put({ ...row, ...this._updateData });
+          const updated = { ...row, ...this._updateData };
+          await tx.store.put(updated);
+          updatedRows.push({ old: row, new: updated });
         }
         await tx.done;
+
+        // Notify subscribers
+        for (const u of updatedRows) {
+          notifySubscribers(this._table, 'UPDATE', u.new, u.old);
+        }
+
         return { data: null, error: null };
       }
 
@@ -228,6 +245,12 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
           await tx.store.delete(row.id);
         }
         await tx.done;
+
+        // Notify subscribers
+        for (const row of toDelete) {
+          notifySubscribers(this._table, 'DELETE', null, row);
+        }
+
         return { data: null, error: null };
       }
 
@@ -239,7 +262,68 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
   }
 }
 
+// ─── REALTIME ───────────────────────────────────────────────────────────────
+
+type RealtimeCallback = (payload: {
+  event: string;
+  schema: string;
+  table: string;
+  new: any;
+  old: any;
+}) => void;
+
+class RealtimeChannel {
+  private _name: string;
+  private _callbacks: Array<{
+    event: string;
+    schema: string;
+    table: string;
+    callback: RealtimeCallback;
+  }> = [];
+
+  constructor(name: string) {
+    this._name = name;
+  }
+
+  on(event: string, filter: { schema: string; table: string }, callback: RealtimeCallback): this {
+    this._callbacks.push({ event, ...filter, callback });
+    return this;
+  }
+
+  subscribe(): this {
+    _channels.add(this);
+    // Simulate async subscription success
+    setTimeout(() => {
+      // Potentially trigger a 'SUBSCRIBED' event if the client expects it
+    }, 0);
+    return this;
+  }
+
+  unsubscribe() {
+    _channels.delete(this);
+  }
+
+  emit(table: string, event: string, payload: any) {
+    for (const cb of this._callbacks) {
+      if ((cb.event === '*' || cb.event === event || (cb.event === 'postgres_changes' && (event === 'INSERT' || event === 'UPDATE' || event === 'DELETE'))) && cb.table === table) {
+        cb.callback(payload);
+      }
+    }
+  }
+}
+
+const _channels = new Set<RealtimeChannel>();
+
+function notifySubscribers(table: string, event: string, newData: any, oldData: any = null) {
+  const payload = { event, schema: 'public', table, new: newData, old: oldData };
+  for (const channel of _channels) {
+    channel.emit(table, event, payload);
+  }
+}
+
 // Drop-in replacement for the Supabase client API
 export const db = {
   from: (table: string) => new QueryBuilder(table),
+  channel: (name: string) => new RealtimeChannel(name),
+  removeChannel: (channel: RealtimeChannel) => channel.unsubscribe(),
 };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtMoney, round2 } from "@/lib/abl/format";
 import { Card } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getCompanySettings } from "@/lib/abl/companySettings";
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 
 interface AccRow {
   account_name: string;
@@ -18,19 +19,34 @@ interface AccRow {
   credit_balance: number;
 }
 
+
 export default function TrialBalance() {
   const [raw, setRaw] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
 
-  useEffect(() => { load(); }, []);
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from("gl_entries").select("account_name, debit, credit, entry_date");
     setRaw(data ?? []);
     setLoading(false);
-  }
+  }, []);
+
+  useEffect(() => { 
+    load(); 
+
+    // Real-time subscription
+    const channel = supabase.channel('trial_balance_realtime')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'gl_entries' }, () => {
+        load();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const accounts = useMemo<AccRow[]>(() => {
     const map = new Map<string, { d: number; c: number }>();
@@ -120,6 +136,7 @@ export default function TrialBalance() {
 
   return (
     <div className="space-y-4">
+      <SyncStatusBadge table="gl_entries" />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-white">Trial Balance</h2>

@@ -48,7 +48,10 @@ export function LedgerTable({
             {rows.map((r, ri) => (
               <tr 
                 key={r.id ?? ri} 
-                className="hover:bg-white/[0.03] border-b border-white/5 transition-colors group/row"
+                className={cn(
+                  "hover:bg-white/[0.03] border-b border-white/5 transition-colors group/row",
+                  r._is_sub_row && "bg-white/[0.01] opacity-80 italic"
+                )}
               >
                 {columns.map((c, ci) => (
                   <td 

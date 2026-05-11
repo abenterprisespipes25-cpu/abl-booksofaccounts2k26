@@ -7,6 +7,7 @@ export interface ParsedResult<T> {
   rows: T[];
   glEntries: GLRow[];
   monthYear: string;
+  sundries?: any[];
 }
 
 // Force every row + GL entry into a target month_year. Re-stamps folios and
@@ -208,126 +209,155 @@ const CDB_FIELD_TO_GL: Array<{ field: string; account: string; side: "dr" | "cr"
 
 export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  let allParsed: any[] = [];
-  const glByMonth = new Map<string, Map<string, GLRow>>();
+  const allRows: any[] = [];
+  const allSundries: any[] = [];
+  const glEntries: GLRow[] = [];
+  let detectedMonthYear = "";
 
   for (const name of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
     if (h < 0) continue;
-    const headerRow = rows[h] || [];
-    const data = rows.slice(h + 1);
+    const dataStartIndex = h + 1;
+    
+    let currentHeader: any = null;
+    const transactions: any[] = [];
 
-    const COL_ACCT = findColIdx(headerRow, ["Account"], 5);
-    const COL_DR = findColIdx(headerRow, ["Debit"], 6);
-    const COL_CR = findColIdx(headerRow, ["Credit"], 7);
-    const COL_NAME = findColIdx(headerRow, ["Name"], 3);
-    const COL_NO = findColIdx(headerRow, ["Num", "No.", "No", "Number"], 2);
-    const COL_MEMO = findColIdx(headerRow, ["Memo", "Memo/Description"], 4);
+    for (let i = dataStartIndex; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.every(cell => String(cell).trim() === '')) continue;
 
-    let current: { header: any[]; splits: any[][] } | null = null;
-    const flush = () => {
-      if (!current) return;
-      const hdr = current.header;
-      const iso = toISODate(hdr[0]);
-      if (!iso) { current = null; return; }
-      const memo = String(hdr[COL_MEMO] ?? "");
-      const cvMatch = memo.match(/CV\s*(\d+)/i);
-      const pcfMatch = memo.match(/PCF\s*(\S+)/i);
-      const fundRaw = String(hdr[COL_ACCT] ?? hdr[5] ?? "");
-      const fund = mapFund(fundRaw);
-      const my = monthYearFromISO(iso);
+      const colA = String(row[0] ?? '').trim();  // Date
+      const colB = String(row[1] ?? '').trim();  // Transaction Type
+      const colC = String(row[2] ?? '').trim();  // No.
+      const colD = String(row[3] ?? '').trim();  // Name
+      const colE = String(row[4] ?? '').trim();  // Memo/Description
+      const colF = String(row[5] ?? '').trim();  // Account
+      const colG = String(row[6] ?? '').trim();  // Debit
+      const colH = String(row[7] ?? '').trim();  // Credit
 
-      const entry: any = {
-        entry_date: iso, payee: String(hdr[COL_NAME] ?? ""), particulars: memo,
-        petty_cash_voucher: pcfMatch ? pcfMatch[1] : "", check_voucher_no: cvMatch ? `CV ${cvMatch[1]}` : "",
-        check_no: String(hdr[COL_NO] ?? ""), fund, cash_amount: 0, month_year: my,
-      };
-      for (const f of CDB_FIELD_TO_GL) entry[f.field] = 0;
-      entry["vat_input_tax"] = 0;
-      const sundryLines: Array<{ title: string; dr: number; cr: number }> = [];
+      const iso = toISODate(row[0]);
+      const isHeaderRow = iso !== null && colC !== '' && colD !== '';
 
-      let totalCredits = num(hdr[COL_CR]);
-      const isFundAccount = (acct: string) => {
-        const a = acct.trim();
-        return /^CIB[:\s]/i.test(a) || /petty\s*cash/i.test(a) || /revolving\s*fund/i.test(a);
-      };
-
-      for (const sp of current.splits) {
-        const acct = String(sp[COL_ACCT] ?? "").trim();
-        const dr = num(sp[COL_DR]); const cr = num(sp[COL_CR]);
-        totalCredits += cr;
-        if (isFundAccount(acct) || !acct) continue;
-        if (acct.toLowerCase().includes("input vat")) { entry.vat_input_tax = round2(entry.vat_input_tax + dr); continue; }
-        if (acct.startsWith("Advances to Employees")) { entry.advances_officers_emp = round2(entry.advances_officers_emp + dr); continue; }
-        if (acct.toLowerCase().includes("water") && acct.toLowerCase().includes("travel")) { entry.travel_water = round2(entry.travel_water + dr); continue; }
-        const field = CDB_EXACT_ACCOUNTS[acct];
-        if (field) { const amt = CREDIT_FIELDS_CDB.has(field) ? cr : dr; entry[field] = round2((entry[field] || 0) + amt); continue; }
-        sundryLines.push({ title: acct, dr: round2(dr), cr: round2(cr) });
-      }
-      entry.sundries_acct_title = ""; entry.sundries_dr = 0; entry.sundries_cr = 0;
-      for (const f of CDB_FIELD_TO_GL) if (f.side === "cr" && entry[f.field] > 0) entry[f.field] = round2(-entry[f.field]);
-      const splitRows = current.splits.map(sp => ({
-        account: String(sp[COL_ACCT] ?? "").trim(),
-        debit: num(sp[COL_DR]),
-        credit: num(sp[COL_CR]),
-        memo: String(sp[COL_MEMO] ?? "").trim()
-      }));
-
-      entry.allSplitRows_json = JSON.stringify(splitRows);
-      allParsed.push(entry);
-
-      for (const s of sundryLines) {
-        allParsed.push({
-          entry_date: entry.entry_date, payee: entry.payee, particulars: "", petty_cash_voucher: entry.petty_cash_voucher,
-          check_voucher_no: entry.check_voucher_no, check_no: "", fund: "", cash_amount: 0, month_year: my,
-          accounts_payable_trade: 0, vat_input_tax: 0, direct_labor_basic: 0, overhead_labor_basic: 0,
-          comm_light_water_plant: 0, comm_light_water_admin: 0, comm_light_water_sales: 0, itw_top_10k_corp: 0,
-          itw_compensation: 0, itw_at_source: 0, sss_phic_hdmf_prem: 0, sss_hdmf_loan: 0, outside_services_construction: 0,
-          travel_admin: 0, travel_sales: 0, travel_construction: 0, travel_water: 0, sales_comm_3rd_party: 0,
-          delivery_expenses: 0, advances_officers_emp: 0, sundries_acct_title: s.title, sundries_dr: s.dr, sundries_cr: s.cr,
-          allSplitRows_json: null
+      if (isHeaderRow) {
+        if (currentHeader) transactions.push(currentHeader);
+        currentHeader = {
+          date: iso,
+          transactionType: colB,
+          no: colC,
+          name: colD,
+          memo: colE,
+          account: colF,
+          debit: num(colG),
+          credit: num(colH),
+          splitRows: []
+        };
+        if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
+      } else if (colF !== '' && currentHeader !== null) {
+        currentHeader.splitRows.push({
+          date: currentHeader.date,
+          transactionType: currentHeader.transactionType,
+          no: currentHeader.no,
+          name: currentHeader.name,
+          memo: colE !== '' ? colE : currentHeader.memo,
+          account: colF,
+          debit: num(colG),
+          credit: num(colH)
         });
       }
-      current = null;
-    };
-
-    for (const r of data) {
-      const hasDate = !!toISODate(r[0]);
-      const hasNo = String(r[COL_NO] ?? "").trim() !== "";
-      const hasName = String(r[COL_NAME] ?? "").trim() !== "";
-      if (hasDate && hasNo && hasName) { flush(); current = { header: r, splits: [] }; }
-      else if (current && (String(r[COL_ACCT] ?? "").trim() || num(r[COL_DR]) || num(r[COL_CR]))) { current.splits.push(r); }
     }
-    flush();
+    if (currentHeader) transactions.push(currentHeader);
+
+    // Map transactions to CDB Entries
+    for (const tx of transactions) {
+      const my = monthYearFromISO(tx.date);
+      const cvMatch = tx.memo.match(/CV\s*(\d+)/i);
+      const pcfMatch = tx.memo.match(/PCF\s*(\S+)/i);
+      const fund = mapFund(tx.account);
+      const folio = folioFor("CDB", my);
+
+      const entryId = crypto.randomUUID();
+      const entry: any = {
+        id: entryId,
+        entry_date: tx.date,
+        payee: tx.name,
+        particulars: tx.memo,
+        petty_cash_voucher: pcfMatch ? pcfMatch[1] : "",
+        check_voucher_no: cvMatch ? `CV ${cvMatch[1]}` : "",
+        check_no: tx.no,
+        fund: fund,
+        cash_amount: tx.credit,
+        month_year: my,
+        allSplitRows_json: JSON.stringify(tx.splitRows)
+      };
+
+      // Reset columns
+      for (const f of CDB_FIELD_TO_GL) entry[f.field] = 0;
+      entry.vat_input_tax = 0;
+
+      const sundries: any[] = [];
+
+      // Process split rows for columns
+      for (const sr of tx.splitRows) {
+        const acct = sr.account.trim();
+        const dr = sr.debit;
+        const cr = sr.credit;
+
+        // Post individual GL lines
+        glEntries.push({
+          month_year: my,
+          entry_date: tx.date,
+          account_name: acct,
+          particulars: tx.name,
+          folio: folio,
+          debit: dr,
+          credit: cr,
+          source_module: 'CDB',
+          source_ref: tx.no
+        });
+
+        if (acct.toLowerCase().includes("input vat")) {
+          entry.vat_input_tax = round2(entry.vat_input_tax + dr);
+        } else if (acct.startsWith("Advances to Employees")) {
+          entry.advances_officers_emp = round2(entry.advances_officers_emp + dr);
+        } else if (acct.toLowerCase().includes("water") && acct.toLowerCase().includes("travel")) {
+          entry.travel_water = round2(entry.travel_water + dr);
+        } else {
+          const field = CDB_EXACT_ACCOUNTS[acct];
+          if (field) {
+            const amt = CREDIT_FIELDS_CDB.has(field) ? cr : dr;
+            entry[field] = round2((entry[field] || 0) + amt);
+          } else {
+            // Sundry
+            sundries.push({
+              cdb_entry_id: entryId,
+              acct_title: acct,
+              dr: dr,
+              cr: cr
+            });
+          }
+        }
+      }
+
+      // Post the Cash/Fund credit to GL
+      glEntries.push({
+        month_year: my,
+        entry_date: tx.date,
+        account_name: fundToGLAccount(fund),
+        particulars: tx.name,
+        folio: folio,
+        debit: tx.debit, // In case of refund? Usually 0
+        credit: tx.credit,
+        source_module: 'CDB',
+        source_ref: tx.no
+      });
+
+      allRows.push(entry);
+      allSundries.push(...sundries);
+    }
   }
 
-  const addGL = (my: string, date: string, account: string, debit: number, credit: number, particulars: string) => {
-    if (!account || (debit === 0 && credit === 0)) return;
-    const key = `${date}|${account}|${particulars}`;
-    let bucket = glByMonth.get(my);
-    if (!bucket) { bucket = new Map(); glByMonth.set(my, bucket); }
-    const cur = bucket.get(key);
-    if (cur) { cur.debit = round2(cur.debit + debit); cur.credit = round2(cur.credit + credit); }
-    else { bucket.set(key, { month_year: my, entry_date: date, account_name: account, particulars, folio: folioFor("CDB", my), debit, credit, source_module: "CDB" }); }
-  };
-
-  for (const e of allParsed) {
-    const my = e.month_year;
-    addGL(my, e.entry_date, fundToGLAccount(e.fund), 0, Math.abs(e.cash_amount), e.payee);
-    for (const f of CDB_FIELD_TO_GL) {
-      const amt = e[f.field] || 0; if (amt === 0) continue;
-      const abs = Math.abs(amt);
-      if (f.side === "dr") addGL(my, e.entry_date, f.account, abs, 0, e.payee);
-      else addGL(my, e.entry_date, f.account, 0, abs, e.payee);
-    }
-    if (e.vat_input_tax > 0) addGL(my, e.entry_date, "Input VAT", e.vat_input_tax, 0, e.payee);
-    if (e.sundries_acct_title) addGL(my, e.entry_date, e.sundries_acct_title, e.sundries_dr, e.sundries_cr, e.payee);
-  }
-
-  const glEntries: GLRow[] = [];
-  for (const [my, bucket] of glByMonth) glEntries.push(...balanceWithSuspense([...bucket.values()], my, "CDB", folioFor("CDB", my)));
-  return { rows: allParsed, glEntries, monthYear: allParsed[0]?.month_year || "" };
+  return { rows: allRows, glEntries, monthYear: detectedMonthYear, sundries: allSundries };
 }
 
 // ---------- Purchase Book ----------
@@ -356,99 +386,152 @@ const PB_FIELD_TO_GL: Array<{ field: string; account: string; side: "dr" | "cr" 
 
 export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  let allParsed: any[] = [];
-  const glByMonth = new Map<string, Map<string, GLRow>>();
+  const allRows: any[] = [];
+  const allSundries: any[] = [];
+  const glEntries: GLRow[] = [];
+  let detectedMonthYear = "";
 
   for (const name of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
     if (h < 0) continue;
-    const headerRow = rows[h] || [];
-    // Enhanced date detection: check for Transaction Date, Invoice Date, or Posting Date
-    const COL_DATE = findColIdx(headerRow, ["Date", "Transaction Date", "Invoice Date", "Posting Date", "Trans Date"], 0);
-    const data = rows.slice(h + 1);
+    const dataStartIndex = h + 1;
+    
+    let currentHeader: any = null;
+    const transactions: any[] = [];
 
-    let current: { header: any[]; splits: any[][] } | null = null;
-    const flush = () => {
-      if (!current) return;
-      const h = current.header;
-      const iso = toISODate(h[COL_DATE]);
-      if (!iso) { current = null; return; }
-      const txType = String(h[1] ?? "").trim().toLowerCase();
-      if (txType === "journal entry" || txType === "journal") { current = null; return; }
+    for (let i = dataStartIndex; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.every(cell => String(cell).trim() === '')) continue;
 
-      const sampleAcct5 = current.splits.map(s => String(s[5] ?? "")).find(Boolean) ?? "";
-      const sampleAcct6 = current.splits.map(s => String(s[6] ?? "")).find(Boolean) ?? "";
-      const useNewLayout = sampleAcct6.includes(":") || /accounts payable|input vat|withholding/i.test(sampleAcct6) || (!sampleAcct5 && !!sampleAcct6);
-      const ACC = useNewLayout ? 6 : 5; const DR = useNewLayout ? 7 : 6; const CR = useNewLayout ? 8 : 7;
-      const my = monthYearFromISO(iso);
+      const colA = String(row[0] ?? '').trim();  // Date
+      const colB = String(row[1] ?? '').trim();  // Transaction Type
+      const colC = String(row[2] ?? '').trim();  // No.
+      const colD = String(row[3] ?? '').trim();  // Posting
+      const colE = String(row[4] ?? '').trim();  // Name (Supplier)
+      const colF = String(row[5] ?? '').trim();  // Memo/Description
+      const colG = String(row[6] ?? '').trim();  // Account
+      const colH = String(row[7] ?? '').trim();  // Debit
+      const colI = String(row[8] ?? '').trim();  // Credit
 
-      const entry: any = { entry_date: iso, supplier: String(h[4] ?? ""), invoice_no: String(h[2] ?? ""), month_year: my };
+      const iso = toISODate(row[0]);
+      const isHeaderRow = iso !== null && colC !== '' && colE !== '';
+
+      if (isHeaderRow) {
+        if (currentHeader) transactions.push(currentHeader);
+        currentHeader = {
+          date: iso,
+          transactionType: colB,
+          no: colC,
+          posting: colD,
+          supplier: colE,
+          memo: colF,
+          account: colG,
+          debit: num(colH),
+          credit: num(colI),
+          splitRows: []
+        };
+        if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
+      } else if (colG !== '' && currentHeader !== null) {
+        currentHeader.splitRows.push({
+          date: currentHeader.date,
+          transactionType: currentHeader.transactionType,
+          no: currentHeader.no,
+          supplier: currentHeader.supplier,
+          memo: colF !== '' ? colF : currentHeader.memo,
+          account: colG,
+          debit: num(colH),
+          credit: num(colI)
+        });
+      }
+    }
+    if (currentHeader) transactions.push(currentHeader);
+
+    // Map transactions to Purchase Book Entries
+    for (const tx of transactions) {
+      const my = monthYearFromISO(tx.date);
+      const folio = folioFor("PB", my);
+      const entryId = crypto.randomUUID();
+
+      const entry: any = {
+        id: entryId,
+        entry_date: tx.date,
+        supplier: tx.supplier,
+        invoice_no: tx.no,
+        month_year: my
+      };
+
       for (const f of PB_FIELD_TO_GL) entry[f.field] = 0;
-      const sundryLines: Array<{ title: string; amount: number }> = [];
+      const sundries: any[] = [];
 
-      for (const sp of current.splits) {
-        const acct = String(sp[ACC] ?? "").trim();
-        const dr = num(sp[DR]); const cr = num(sp[CR]);
-        if (!acct || acct.toLowerCase() === "accounts payable") continue;
-        if (acct.toLowerCase().includes("input vat")) { entry.input_tax = round2(entry.input_tax + dr); continue; }
-        if (acct.startsWith("Cost of Construction:") && acct.toLowerCase().includes("fuel")) { entry.fuel_construction = round2(entry.fuel_construction + dr); continue; }
-        const field = PB_EXACT[acct];
-        if (field) { const amt = field === "itw_top_10t" ? cr : dr; entry[field] = round2(entry[field] + amt); continue; }
-        sundryLines.push({ title: acct, amount: round2(dr - cr) });
+      for (const sr of tx.splitRows) {
+        const acct = sr.account.trim();
+        const dr = sr.debit;
+        const cr = sr.credit;
+
+        // Post individual GL lines
+        glEntries.push({
+          month_year: my,
+          entry_date: tx.date,
+          account_name: acct,
+          particulars: tx.supplier,
+          folio: folio,
+          debit: dr,
+          credit: cr,
+          source_module: 'PB',
+          source_ref: tx.no
+        });
+
+        if (acct.toLowerCase() === "accounts payable") {
+          entry.ap_trade_cr = round2(entry.ap_trade_cr + cr);
+        } else if (acct.toLowerCase().includes("input vat")) {
+          entry.input_tax = round2(entry.input_tax + dr);
+        } else if (acct.startsWith("Cost of Construction:") && acct.toLowerCase().includes("fuel")) {
+          entry.fuel_construction = round2(entry.fuel_construction + dr);
+        } else {
+          const field = PB_EXACT[acct];
+          if (field) {
+            const amt = field === "itw_top_10t" ? cr : dr;
+            entry[field] = round2(entry[field] + amt);
+          } else {
+            sundries.push({
+              pb_entry_id: entryId,
+              acct_title: acct,
+              amount: round2(dr - cr)
+            });
+          }
+        }
       }
-      if (entry.itw_top_10t > 0) entry.itw_top_10t = round2(-entry.itw_top_10t);
-      let apSum = 0;
-      for (const f of PB_FIELD_TO_GL) if (f.field !== "ap_trade_cr") apSum += entry[f.field] || 0;
-      for (const s of sundryLines) apSum += s.amount;
-      entry.ap_trade_cr = round2(apSum);
-      allParsed.push(entry);
 
-      for (const s of sundryLines) {
-        const sub: any = { entry_date: iso, supplier: entry.supplier, invoice_no: entry.invoice_no, month_year: my, ap_trade_cr: 0, sundries_acct_title: s.title, sundries_amount: s.amount };
-        for (const f of PB_FIELD_TO_GL) sub[f.field] = 0;
-        allParsed.push(sub);
+      // Handle the header row's account if it's not a split row
+      // (Usually the header row in QB export is just the summary row)
+      // Actually, our loop already processes header row as the summary.
+      // But we should ensure the summary row account (usually Accounts Payable) is NOT double counted.
+      // Actually, the splitRows contain ALL the lines. The header row itself usually doesn't have an account in the export if it's just a summary.
+      // Wait, in QB, the header row DOES have an account (e.g. Accounts Payable).
+      // Let's check if the header row should be posted to GL too.
+      // Yes, the header row is the "Top Level" account.
+      glEntries.push({
+        month_year: my,
+        entry_date: tx.date,
+        account_name: tx.account,
+        particulars: tx.supplier,
+        folio: folio,
+        debit: tx.debit,
+        credit: tx.credit,
+        source_module: 'PB',
+        source_ref: tx.no
+      });
+      if (tx.account.toLowerCase() === "accounts payable") {
+        entry.ap_trade_cr = round2(entry.ap_trade_cr + tx.credit);
       }
-      current = null;
-    };
 
-    for (const r of data) {
-      const hasDate = !!toISODate(r[COL_DATE]);
-      const hasName = String(r[4] ?? "").trim() !== "";
-      if (hasDate && hasName) { flush(); current = { header: r, splits: [] }; }
-      else if (current && (String(r[5] ?? "").trim() || String(r[6] ?? "").trim() || num(r[6]) || num(r[7]) || num(r[8]))) { current.splits.push(r); }
+      allRows.push(entry);
+      allSundries.push(...sundries);
     }
-    flush();
   }
 
-  const addGL = (my: string, date: string, account: string, debit: number, credit: number, particulars: string) => {
-    if (!account || (debit === 0 && credit === 0)) return;
-    const key = `${date}|${account}|${particulars}`;
-    let bucket = glByMonth.get(my);
-    if (!bucket) { bucket = new Map(); glByMonth.set(my, bucket); }
-    const cur = bucket.get(key);
-    if (cur) { cur.debit = round2(cur.debit + debit); cur.credit = round2(cur.credit + credit); }
-    else { bucket.set(key, { month_year: my, entry_date: date, account_name: account, particulars, folio: folioFor("PB", my), debit, credit, source_module: "PB" }); }
-  };
-
-  for (const e of allParsed) {
-    const my = e.month_year;
-    for (const f of PB_FIELD_TO_GL) {
-      const amt = e[f.field] || 0; if (amt === 0) continue;
-      const abs = Math.abs(amt);
-      if (f.side === "dr") addGL(my, e.entry_date, f.account, abs, 0, e.supplier);
-      else addGL(my, e.entry_date, f.account, 0, abs, e.supplier);
-    }
-    if (e.sundries_acct_title && e.sundries_amount !== 0) {
-      const dr = e.sundries_amount > 0 ? e.sundries_amount : 0;
-      const cr = e.sundries_amount < 0 ? Math.abs(e.sundries_amount) : 0;
-      addGL(my, e.entry_date, e.sundries_acct_title, dr, cr, e.supplier);
-    }
-  }
-
-  const glEntries: GLRow[] = [];
-  for (const [my, bucket] of glByMonth) glEntries.push(...balanceWithSuspense([...bucket.values()], my, "PB", folioFor("PB", my)));
-  return { rows: allParsed, glEntries, monthYear: allParsed[0]?.month_year || "" };
+  return { rows: allRows, glEntries, monthYear: detectedMonthYear, sundries: allSundries };
 }
 
 // ---------- Sales Book ----------
