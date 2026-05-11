@@ -482,8 +482,12 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
         month_year: my
       };
 
-      for (const f of PB_FIELD_TO_GL) entry[f.field] = 0;
+      CDB_FIXED_FIELDS.forEach(f => entry[f] = 0); // Not used here but good for consistency
+      const fixedTotals: Record<string, number> = {};
+      PB_FIELD_TO_GL.forEach(f => fixedTotals[f.field] = 0);
+
       const sundries: any[] = [];
+
 
       for (const sr of tx.splitRows) {
         const acct = sr.account.trim();
@@ -504,63 +508,68 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
         });
 
         if (acct.toLowerCase() === "accounts payable") {
-          entry.ap_trade_cr = round2(entry.ap_trade_cr + cr);
+          fixedTotals.ap_trade_cr = round2((fixedTotals.ap_trade_cr || 0) + cr);
         } else if (acct.toLowerCase().includes("input")) {
-          entry.input_tax = round2(entry.input_tax + dr);
+          fixedTotals.input_tax = round2((fixedTotals.input_tax || 0) + dr);
         } else if (acct.toLowerCase().includes("repairs and maintenance")) {
-          if (acct.includes("G&A")) entry.repairs_admin = round2((entry.repairs_admin || 0) + dr);
-          else if (acct.includes("Selling")) entry.repairs_sales = round2((entry.repairs_sales || 0) + dr);
-          else if (acct.includes("Overhead") || acct.includes("OH-")) entry.repairs_plant = round2((entry.repairs_plant || 0) + dr);
-          else entry.repairs_admin = round2((entry.repairs_admin || 0) + dr); // default to admin
+          if (acct.includes("G&A")) fixedTotals.repairs_admin = round2((fixedTotals.repairs_admin || 0) + dr);
+          else if (acct.includes("Selling")) fixedTotals.repairs_sales = round2((fixedTotals.repairs_sales || 0) + dr);
+          else if (acct.includes("Overhead") || acct.includes("OH-")) fixedTotals.repairs_plant = round2((fixedTotals.repairs_plant || 0) + dr);
+          else fixedTotals.repairs_admin = round2((fixedTotals.repairs_admin || 0) + dr);
         } else if (acct.toLowerCase().includes("fuel") || acct.toLowerCase().includes("lubricants")) {
-          if (acct.includes("G&A")) entry.fuel_admin = round2((entry.fuel_admin || 0) + dr);
-          else if (acct.includes("Selling")) entry.fuel_sales = round2((entry.fuel_sales || 0) + dr);
-          else if (acct.includes("Overhead") || acct.includes("OH-")) entry.fuel_plant = round2((entry.fuel_plant || 0) + dr);
-          else if (acct.includes("Cons-") || acct.includes("Construction")) entry.fuel_construction = round2((entry.fuel_construction || 0) + dr);
-          else entry.fuel_admin = round2((entry.fuel_admin || 0) + dr); // default
+          if (acct.includes("G&A")) fixedTotals.fuel_admin = round2((fixedTotals.fuel_admin || 0) + dr);
+          else if (acct.includes("Selling")) fixedTotals.fuel_sales = round2((fixedTotals.fuel_sales || 0) + dr);
+          else if (acct.includes("Overhead") || acct.includes("OH-")) fixedTotals.fuel_plant = round2((fixedTotals.fuel_plant || 0) + dr);
+          else if (acct.includes("Cons-") || acct.includes("Construction")) fixedTotals.fuel_construction = round2((fixedTotals.fuel_construction || 0) + dr);
+          else fixedTotals.fuel_admin = round2((fixedTotals.fuel_admin || 0) + dr);
         } else {
           const field = PB_EXACT[acct];
           if (field) {
             const amt = field === "itw_top_10t" ? -cr : dr;
-            entry[field] = round2((entry[field] || 0) + amt);
+            fixedTotals[field] = round2((fixedTotals[field] || 0) + amt);
           } else {
-            sundries.push({
-              pb_entry_id: entryId,
-              acct_title: acct,
-              amount: round2(dr - cr)
-            });
+            sundries.push({ acct_title: acct, amount: round2(dr - cr) });
           }
         }
-
       }
 
-      // Handle the header row's account if it's not a split row
-      // (Usually the header row in QB export is just the summary row)
-      // Actually, our loop already processes header row as the summary.
-      // But we should ensure the summary row account (usually Accounts Payable) is NOT double counted.
-      // Actually, the splitRows contain ALL the lines. The header row itself usually doesn't have an account in the export if it's just a summary.
-      // Wait, in QB, the header row DOES have an account (e.g. Accounts Payable).
-      // Let's check if the header row should be posted to GL too.
-      // Yes, the header row is the "Top Level" account.
-      glEntries.push({
-        month_year: my,
-        entry_date: tx.date,
-        account_name: tx.account,
-        particulars: tx.supplier,
-        folio: folio,
-        debit: tx.debit,
-        credit: tx.credit,
-        source_module: 'PB',
-        source_ref: tx.no
-      });
-      if (tx.account.toLowerCase() === "accounts payable") {
-        entry.ap_trade_cr = round2(entry.ap_trade_cr + tx.credit);
+      // 2. Second pass: Create rows for the table visibility
+      if (sundries.length === 0) {
+        allRows.push({ ...entry, ...fixedTotals });
+      } else {
+        sundries.forEach((s, idx) => {
+          allRows.push({
+            ...entry,
+            ...(idx === 0 ? fixedTotals : {}),
+            sundries_acct_title: s.acct_title,
+            sundries_amount: s.amount,
+            _is_sub_row: idx > 0
+          });
+          allSundries.push({
+            pb_entry_id: entryId,
+            acct_title: s.acct_title,
+            amount: s.amount
+          });
+        });
       }
 
-      allRows.push(entry);
-      allSundries.push(...sundries);
+      // 3. Post the header row's account to GL (Accountant verified: Credit Liability)
+      if (tx.account) {
+        glEntries.push({
+          month_year: my,
+          entry_date: tx.date,
+          account_name: tx.account,
+          particulars: tx.supplier,
+          folio: folio,
+          debit: tx.debit,
+          credit: tx.credit,
+          source_module: 'PB',
+          source_ref: tx.no
+        });
+      }
     }
   }
+
 
   return { rows: allRows, glEntries, monthYear: detectedMonthYear, sundries: allSundries };
 }
