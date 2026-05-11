@@ -164,53 +164,40 @@ function monthYearFromISO(iso: string): string {
 }
 
 // ---------- CDB ----------
-const CDB_EXACT_ACCOUNTS: Record<string, string> = {
-  "Accounts Payable": "accounts_payable_trade",
-  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic": "direct_labor_basic",
-  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic": "overhead_labor_basic",
-  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water": "comm_light_water_plant",
-  "General and Administrative Expenses:G&A-Communication, Light & Water": "comm_light_water_admin",
-  "Selling Expenses:Selling-Communication, Light & Water": "comm_light_water_sales",
-  "Withholding Tax Payable - Expanded - Top Corp.": "itw_top_10k_corp",
-  "Withholding Tax Payable - Compensation": "itw_compensation",
-  "Withholding Tax Payable - Expanded - at Source": "itw_at_source",
-  "SSS, PHIC and HDMF Premiums Payable": "sss_phic_hdmf_prem",
-  "SSS and HDMF Loans Payable": "sss_hdmf_loan",
-  "Selling Expenses:Selling-Outside Services": "outside_services_construction",
-  "General and Administrative Expenses:G&A-Travel and Transportation": "travel_admin",
-  "Selling Expenses:Selling-Travel and Transportation": "travel_sales",
-  "Cost of Construction:Cons-Travel and Transportation": "travel_construction",
-  "Selling Expenses:Selling-Commissions": "sales_comm_3rd_party",
-  "Selling Expenses:Selling-Delivery Expense": "delivery_expenses",
+const CDB_FIXED_MAPPING: Record<string, { field: string; match_type?: "startswith" }> = {
+  "Accounts Payable": { field: "ap_trade_dr" },
+  "Accounts Payable - Others": { field: "ap_trade_dr" },
+  "Input VAT": { field: "vat_input_tax" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic": { field: "direct_labor_basic" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Overtime": { field: "direct_labor_basic" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic": { field: "overhead_labor_basic" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Overtime": { field: "overhead_labor_basic" },
+  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water": { field: "comm_light_water_plant" },
+  "General and Administrative Expenses:G&A-Communication, Light & Water": { field: "comm_light_water_admin" },
+  "Selling Expenses:Selling-Communication, Light & Water": { field: "comm_light_water_sales" },
+  "Withholding Tax Payable - Expanded - Top Corp.": { field: "itw_top_10k_corp" },
+  "Withholding Tax Payable - Compensation": { field: "itw_compensation" },
+  "Withholding Tax Payable - Expanded - at Source": { field: "itw_at_source" },
+  "Withholding Tax Payable - Final": { field: "itw_at_source" },
+  "SSS, PHIC and HDMF Premiums Payable": { field: "sss_phic_hdmf_prem" },
+  "SSS and HDMF Loans Payable": { field: "sss_hdmf_loan" },
+  "Cost of Construction:Cons-Outside Services": { field: "outside_services_construction" },
+  "Cost of Manufacturing:Overhead:OH-Outside Service": { field: "outside_services_construction" },
+  "General and Administrative Expenses:G&A-Travel and Transportation": { field: "travel_admin" },
+  "Selling Expenses:Selling-Travel and Transportation": { field: "travel_sales" },
+  "Cost of Construction:Cons-Travel and Transportation": { field: "travel_construction" },
+  "Cost of Manufacturing:Overhead:OH-Travel and Transportation": { field: "travel_water" },
+  "Selling Expenses:Selling-Commissions": { field: "sales_comm_3rd_party" },
+  "Selling Expenses:Selling-Delivery Expense": { field: "delivery_expenses" },
+  "Advances to Employees": { field: "advances_officers_emp", match_type: "startswith" }
 };
+
+const CDB_FIXED_FIELDS = new Set(Object.values(CDB_FIXED_MAPPING).map(v => v.field));
 const CREDIT_FIELDS_CDB = new Set(["itw_top_10k_corp", "itw_compensation", "itw_at_source"]);
-const CDB_FIELD_TO_GL: Array<{ field: string; account: string; side: "dr" | "cr" }> = [
-  { field: "accounts_payable_trade", account: "Accounts Payable", side: "dr" },
-  { field: "vat_input_tax", account: "Input VAT", side: "dr" },
-  { field: "direct_labor_basic", account: "Direct Labor - Basic", side: "dr" },
-  { field: "overhead_labor_basic", account: "Overhead Labor - Basic", side: "dr" },
-  { field: "comm_light_water_plant", account: "OH - Communication, Light & Water", side: "dr" },
-  { field: "comm_light_water_admin", account: "G&A - Communication, Light & Water", side: "dr" },
-  { field: "comm_light_water_sales", account: "Selling - Communication, Light & Water", side: "dr" },
-  { field: "itw_top_10k_corp", account: "Withholding Tax Payable - Top Corp.", side: "cr" },
-  { field: "itw_compensation", account: "Withholding Tax Payable - Compensation", side: "cr" },
-  { field: "itw_at_source", account: "Withholding Tax Payable - at Source", side: "cr" },
-  { field: "sss_phic_hdmf_prem", account: "SSS, PHIC & HDMF Premiums Payable", side: "dr" },
-  { field: "sss_hdmf_loan", account: "SSS & HDMF Loans Payable", side: "dr" },
-  { field: "outside_services_construction", account: "Outside Services - Construction", side: "dr" },
-  { field: "travel_admin", account: "G&A - Travel and Transportation", side: "dr" },
-  { field: "travel_sales", account: "Selling - Travel and Transportation", side: "dr" },
-  { field: "travel_construction", account: "Construction - Travel and Transportation", side: "dr" },
-  { field: "travel_water", account: "Water - Travel and Transportation", side: "dr" },
-  { field: "sales_comm_3rd_party", account: "Selling - Commissions", side: "dr" },
-  { field: "delivery_expenses", account: "Selling - Delivery Expense", side: "dr" },
-  { field: "advances_officers_emp", account: "Advances to Employees", side: "dr" },
-];
 
 export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const allRows: any[] = [];
-  const allSundries: any[] = [];
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
@@ -227,42 +214,35 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       const row = rows[i];
       if (!row || row.every(cell => String(cell).trim() === '')) continue;
 
-      const colA = String(row[0] ?? '').trim();  // Date
-      const colB = String(row[1] ?? '').trim();  // Transaction Type
-      const colC = String(row[2] ?? '').trim();  // No.
-      const colD = String(row[3] ?? '').trim();  // Name
-      const colE = String(row[4] ?? '').trim();  // Memo/Description
-      const colF = String(row[5] ?? '').trim();  // Account
-      const colG = String(row[6] ?? '').trim();  // Debit
-      const colH = String(row[7] ?? '').trim();  // Credit
-
       const iso = toISODate(row[0]);
+      const colC = String(row[2] ?? '').trim();  // No.
+      const colD = String(row[3] ?? '').trim();  // Name (Payee)
+      const colF = String(row[5] ?? '').trim();  // Account
+      const colG = num(row[6]);  // Debit
+      const colH = num(row[7]);  // Credit
+
       const isHeaderRow = iso !== null && colC !== '' && colD !== '';
 
       if (isHeaderRow) {
         if (currentHeader) transactions.push(currentHeader);
         currentHeader = {
           date: iso,
-          transactionType: colB,
+          type: String(row[1] ?? '').trim(),
           no: colC,
-          name: colD,
-          memo: colE,
+          payee: colD,
+          particulars: String(row[4] ?? '').trim(),
           account: colF,
-          debit: num(colG),
-          credit: num(colH),
+          debit: colG,
+          credit: colH,
           splitRows: []
         };
         if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
       } else if (colF !== '' && currentHeader !== null) {
         currentHeader.splitRows.push({
-          date: currentHeader.date,
-          transactionType: currentHeader.transactionType,
-          no: currentHeader.no,
-          name: currentHeader.name,
-          memo: colE !== '' ? colE : currentHeader.memo,
           account: colF,
-          debit: num(colG),
-          credit: num(colH)
+          particulars: String(row[4] ?? '').trim() || currentHeader.particulars,
+          debit: colG,
+          credit: colH
         });
       }
     }
@@ -271,8 +251,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     // Map transactions to CDB Entries
     for (const tx of transactions) {
       const my = monthYearFromISO(tx.date);
-      const cvMatch = tx.memo.match(/CV\s*(\d+)/i);
-      const pcfMatch = tx.memo.match(/PCF\s*(\S+)/i);
       const fund = mapFund(tx.account);
       const folio = folioFor("CDB", my);
 
@@ -280,84 +258,103 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       const entry: any = {
         id: entryId,
         entry_date: tx.date,
-        payee: tx.name,
-        particulars: tx.memo,
-        petty_cash_voucher: pcfMatch ? pcfMatch[1] : "",
-        check_voucher_no: cvMatch ? `CV ${cvMatch[1]}` : "",
+        payee: tx.payee,
+        particulars: tx.particulars,
+        petty_cash_voucher: tx.particulars.match(/PCF\s*(\S+)/i)?.[1] || "",
+        check_voucher_no: tx.particulars.match(/CV\s*(\d+)/i)?.[0] || "",
         check_no: tx.no,
         fund: fund,
-        cash_amount: tx.credit,
-        month_year: my,
-        allSplitRows_json: JSON.stringify(tx.splitRows)
+        cash_amount: tx.credit, // CASH AMOUNT source is Credit Col H
+        month_year: my
       };
 
-      // Reset columns
-      for (const f of CDB_FIELD_TO_GL) entry[f.field] = 0;
-      entry.vat_input_tax = 0;
+      // Initialize all fixed columns to 0
+      CDB_FIXED_FIELDS.forEach(f => entry[f] = 0);
+      entry.vat_input_tax = 0; // Ensure VAT is 0 too
+
+      // 1. First pass: Collect all fixed column totals and all sundry rows
+      const fixedTotals: Record<string, number> = {};
+      CDB_FIXED_FIELDS.forEach(f => fixedTotals[f] = 0);
+      fixedTotals.vat_input_tax = 0;
 
       const sundries: any[] = [];
 
-      // Process split rows for columns
       for (const sr of tx.splitRows) {
         const acct = sr.account.trim();
         const dr = sr.debit;
         const cr = sr.credit;
 
-        // Post individual GL lines
+        // Post to GL
         glEntries.push({
-          month_year: my,
-          entry_date: tx.date,
-          account_name: acct,
-          particulars: tx.name,
-          folio: folio,
-          debit: dr,
-          credit: cr,
-          source_module: 'CDB',
-          source_ref: tx.no
+          month_year: my, entry_date: tx.date, account_name: acct,
+          particulars: tx.payee, folio: folio, debit: dr, credit: cr,
+          source_module: 'CDB', source_ref: tx.no
         });
 
-        if (acct.toLowerCase().includes("input vat")) {
-          entry.vat_input_tax = round2(entry.vat_input_tax + dr);
-        } else if (acct.startsWith("Advances to Employees")) {
-          entry.advances_officers_emp = round2(entry.advances_officers_emp + dr);
-        } else if (acct.toLowerCase().includes("water") && acct.toLowerCase().includes("travel")) {
-          entry.travel_water = round2(entry.travel_water + dr);
-        } else {
-          const field = CDB_EXACT_ACCOUNTS[acct];
-          if (field) {
-            const amt = CREDIT_FIELDS_CDB.has(field) ? cr : dr;
-            entry[field] = round2((entry[field] || 0) + amt);
+        let mapped = false;
+        const mapping = CDB_FIXED_MAPPING[acct];
+        if (mapping) {
+          const isCreditField = CREDIT_FIELDS_CDB.has(mapping.field);
+          // Rule: Input VAT on credit side goes to SUNDRIES
+          if (acct === "Input VAT" && cr > 0) {
+            mapped = false;
           } else {
-            // Sundry
-            sundries.push({
-              cdb_entry_id: entryId,
-              acct_title: acct,
-              dr: dr,
-              cr: cr
-            });
+            const amt = isCreditField ? cr : dr;
+            fixedTotals[mapping.field] = round2((fixedTotals[mapping.field] || 0) + amt);
+            mapped = true;
           }
+        } else {
+          // startswith match
+          for (const [key, val] of Object.entries(CDB_FIXED_MAPPING)) {
+            if (val.match_type === 'startswith' && acct.startsWith(key)) {
+              fixedTotals[val.field] = round2((fixedTotals[val.field] || 0) + dr);
+              mapped = true;
+              break;
+            }
+          }
+        }
+
+        if (!mapped) {
+          sundries.push({ acct_title: acct, dr, cr });
         }
       }
 
-      // Post the Cash/Fund credit to GL
+      // Also process the main row's account (the Fund/Bank) for GL
       glEntries.push({
-        month_year: my,
-        entry_date: tx.date,
-        account_name: fundToGLAccount(fund),
-        particulars: tx.name,
-        folio: folio,
-        debit: tx.debit, // In case of refund? Usually 0
-        credit: tx.credit,
-        source_module: 'CDB',
-        source_ref: tx.no
+        month_year: my, entry_date: tx.date, account_name: fundToGLAccount(fund),
+        particulars: tx.payee, folio: folio, debit: tx.debit, credit: tx.credit,
+        source_module: 'CDB', source_ref: tx.no
       });
 
-      allRows.push(entry);
-      allSundries.push(...sundries);
+      // 2. Second pass: Create the rows
+      if (sundries.length === 0) {
+        // Just one row with everything
+        allRows.push({ ...entry, ...fixedTotals });
+      } else {
+        // One row per sundry
+        sundries.forEach((s, idx) => {
+          allRows.push({
+            ...entry,
+            // Only put fixed totals on the first row to avoid double counting in report totals
+            ...(idx === 0 ? fixedTotals : {}),
+            sundries_acct_title: s.acct_title,
+            sundries_dr: s.dr,
+            sundries_cr: s.cr,
+            id: crypto.randomUUID()
+          });
+        });
+      }
     }
   }
 
-  return { rows: allRows, glEntries, monthYear: detectedMonthYear, sundries: allSundries };
+  // Sort by Date then Check No
+  allRows.sort((a, b) => {
+    const d = a.entry_date.localeCompare(b.entry_date);
+    if (d !== 0) return d;
+    return naturalSort(a.check_no, b.check_no);
+  });
+
+  return { rows: allRows, glEntries, monthYear: detectedMonthYear };
 }
 
 // ---------- Purchase Book ----------

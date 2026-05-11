@@ -56,53 +56,9 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       const entryIds = list.map(r => r.id);
 
       if (moduleId === "cdb") {
-        // Fetch sundries for CDB
-        const { data: sundries } = await supabase
-          .from("cdb_sundries")
-          .select("*")
-          .in("cdb_entry_id", entryIds);
-        
-        const sundriesMap = (sundries ?? []).reduce((acc: any, s: any) => {
-          if (!acc[s.cdb_entry_id]) acc[s.cdb_entry_id] = [];
-          acc[s.cdb_entry_id].push(s);
-          return acc;
-        }, {});
-
-        const resultRows: any[] = [];
-        for (const tx of list) {
-          const txSundries = sundriesMap[tx.id] || [];
-          // Base row with mapped distributions
-          const baseRow = {
-            ...tx,
-            date: tx.entry_date,
-            voucher_no: tx.check_voucher_no || tx.petty_cash_voucher,
-            account: tx.fund ? `CIB:${tx.fund}` : "",
-            debit: null,
-            credit: tx.cash_amount,
-            sundries_acct_title: txSundries[0]?.acct_title || "",
-            sundries_dr: txSundries[0]?.dr || null,
-            sundries_cr: txSundries[0]?.cr || null,
-          };
-          resultRows.push(baseRow);
-
-          // Add extra sundries as sub-rows
-          for (let i = 1; i < txSundries.length; i++) {
-            const s = txSundries[i];
-            resultRows.push({
-              ...tx,
-              id: `${tx.id}-sundry-${i}`,
-              entry_date: tx.entry_date, 
-              payee: tx.payee,
-              check_voucher_no: tx.check_voucher_no,
-              ...Object.fromEntries(meta.columns.filter(c => c.type === 'currency').map(c => [c.field, null])),
-              sundries_acct_title: s.acct_title,
-              sundries_dr: s.dr,
-              sundries_cr: s.cr,
-              _is_sub_row: true
-            });
-          }
-        }
-        setRows(resultRows);
+        // Sundries are embedded directly in each cdb_entries row (sundries_acct_title, sundries_dr, sundries_cr)
+        // No separate cdb_sundries table fetch needed.
+        setRows(list);
       } else if (moduleId === "purchase_book") {
         // Fetch sundries for Purchase Book
         const { data: sundries } = await supabase
@@ -224,15 +180,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       
       if (replace) {
         for (const my of monthsInFile) {
-          const { data: existing } = await supabase.from(meta.tableName).select("id").eq("month_year", my);
-          const ids = (existing ?? []).map((r: any) => r.id);
-          
-          if (ids.length > 0) {
-            const sundryTable = moduleId === "cdb" ? "cdb_sundries" : "pb_sundries";
-            const fk = moduleId === "cdb" ? "cdb_entry_id" : "pb_entry_id";
-            await supabase.from(sundryTable).delete().in(fk, ids);
-          }
-
           await supabase.from(meta.tableName).delete().eq("month_year", my);
           await supabase.from("uploaded_files").delete().eq("module", meta.glSource).eq("month_year", my);
         }
@@ -240,19 +187,28 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           await supabase.from("gl_entries").delete().eq("source_module", meta.glSource).eq("month_year", my);
         }
       }
-      
+
+      // CDB sundries are embedded in rows — no separate sundry table insert needed.
+      // Purchase Book still uses pb_sundries separate table.
+      if (moduleId === "purchase_book" && parsed.sundries && parsed.sundries.length > 0) {
+        if (replace) {
+          const { data: existing } = await supabase.from(meta.tableName).select("id");
+          const ids = (existing ?? []).map((r: any) => r.id);
+          if (ids.length > 0) await supabase.from("pb_sundries").delete().in("pb_entry_id", ids);
+        }
+      }
+
       const BATCH = 100;
       for (let i = 0; i < parsed.rows.length; i += BATCH) {
         const chunk = parsed.rows.slice(i, i + BATCH);
         const { error } = await supabase.from(meta.tableName).insert(chunk as any);
         if (error) throw error;
       }
-      
-      if (parsed.sundries && parsed.sundries.length > 0) {
-        const sundryTable = moduleId === "cdb" ? "cdb_sundries" : "pb_sundries";
+
+      if (moduleId === "purchase_book" && parsed.sundries && parsed.sundries.length > 0) {
         for (let i = 0; i < parsed.sundries.length; i += BATCH) {
           const chunk = parsed.sundries.slice(i, i + BATCH);
-          const { error } = await supabase.from(sundryTable).insert(chunk as any);
+          const { error } = await supabase.from("pb_sundries").insert(chunk as any);
           if (error) throw error;
         }
       }

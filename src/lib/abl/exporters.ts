@@ -32,14 +32,27 @@ export async function exportExcel(opts: {
 }) {
   const { filename, bookName, monthYear, columns, rows } = opts;
   const settings = await getCompanySettings();
-  const wb = XLSX.utils.book_new();
-  const lines = headerLines(settings, bookName, monthYear);
-  const headerAoa: any[][] = [
-    ...lines.map((l) => [l]),
+  
+  // Header Rows (1-4 as per spec, but we have 6 lines of info if we include company name, title, etc)
+  // Spec: Row 1: Company, Row 2: Title, Row 3: For the month of, Row 4: blank, Row 5: Header1, Row 6: Header2
+  const headerRows: any[][] = [
+    [settings.company_name],
+    [bookName],
+    [`FOR THE MONTH OF ${monthYear}`],
     [],
-    columns.map((c) => c.header),
   ];
-  for (const r of rows) headerAoa.push(columns.map((c) => cellValue(r, c)));
+
+  const hasDoubleHeaders = columns.some(c => c.header1 !== undefined || c.header2 !== undefined);
+  if (hasDoubleHeaders) {
+    headerRows.push(columns.map(c => c.header1 ?? c.header ?? ""));
+    headerRows.push(columns.map(c => c.header2 ?? ""));
+  } else {
+    headerRows.push(columns.map(c => c.header));
+  }
+
+  const dataAoa: any[][] = [...headerRows];
+  for (const r of rows) dataAoa.push(columns.map((c) => cellValue(r, c)));
+  
   // Totals
   const totals = columns.map((c) => {
     if (c.type === "currency") {
@@ -47,56 +60,72 @@ export async function exportExcel(opts: {
     }
     return c === columns[0] ? "TOTAL" : "";
   });
-  headerAoa.push(totals);
+  dataAoa.push(totals);
 
-  const ws = XLSX.utils.aoa_to_sheet(headerAoa);
-  ws["!cols"] = columns.map((c) => ({ wch: Math.max(10, Math.floor((c.width || 100) / 7)) }));
+  const ws = XLSX.utils.aoa_to_sheet(dataAoa);
+  
+  // Column Widths from config
+  ws["!cols"] = columns.map((c) => ({ wch: c.width || 10 }));
 
   const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:A1');
-  const borderAll = { top:{style:'thin',color:{rgb:'CBD5E1'}}, bottom:{style:'thin',color:{rgb:'CBD5E1'}}, left:{style:'thin',color:{rgb:'CBD5E1'}}, right:{style:'thin',color:{rgb:'CBD5E1'}} };
-  const borderDouble = { top:{style:'double',color:{rgb:'000000'}} };
+  const borderAll = { 
+    top: { style: 'thin', color: { rgb: 'CBD5E1' } }, 
+    bottom: { style: 'thin', color: { rgb: 'CBD5E1' } }, 
+    left: { style: 'thin', color: { rgb: 'CBD5E1' } }, 
+    right: { style: 'thin', color: { rgb: 'CBD5E1' } } 
+  };
+  const borderDouble = { top: { style: 'double', color: { rgb: '000000' } } };
+
+  const infoRowsCount = 4;
+  const colHeaderRowsCount = hasDoubleHeaders ? 2 : 1;
+  const dataStartRow = infoRowsCount + colHeaderRowsCount;
 
   for (let R = range.s.r; R <= range.e.r; R++) {
     for (let C = range.s.c; C <= range.e.c; C++) {
-      const addr = XLSX.utils.encode_cell({r:R, c:C});
-      if (!ws[addr]) ws[addr] = {t:'z', v:null};
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) ws[addr] = { t: 'z', v: null };
 
-      const isHeaderArea = R < lines.length + 1; // company name, etc.
-      const isColHeader = R === lines.length + 1;
-      const isTotalRow = R === headerAoa.length - 1;
-      const isDataRow = R > lines.length + 1 && !isTotalRow;
+      const isInfoRow = R < infoRowsCount;
+      const isColHeader = R >= infoRowsCount && R < dataStartRow;
+      const isTotalRow = R === dataAoa.length - 1;
+      const isDataRow = R >= dataStartRow && R < dataAoa.length - 1;
 
-      if (!isHeaderArea) {
+      if (isInfoRow) {
+        ws[addr].s = {
+          font: { name: 'Arial', sz: R === 0 ? 12 : 10, bold: true },
+          alignment: { horizontal: 'left' }
+        };
+      } else if (isColHeader) {
+        ws[addr].s = {
+          font: { name: 'Arial', sz: 9, bold: true, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: '0F2744' }, patternType: 'solid' },
+          border: borderAll,
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+        };
+      } else {
         ws[addr].s = {
           font: {
-            name:  'Arial',
-            sz:    isColHeader || isTotalRow ? 10 : 9,
-            bold:  isColHeader || isTotalRow,
-            color: { rgb: isColHeader ? 'FFFFFF' : '000000' },
+            name: 'Arial',
+            sz: isTotalRow ? 10 : 9,
+            bold: isTotalRow,
+            color: { rgb: '000000' },
           },
-          fill: isColHeader
-            ? { fgColor: { rgb: '0F2744' }, patternType: 'solid' }
-            : isTotalRow
+          fill: isTotalRow
             ? { fgColor: { rgb: 'DBEAFE' }, patternType: 'solid' }
             : (R % 2 === 0 ? { fgColor: { rgb: 'FFFFFF' }, patternType: 'solid' } : { fgColor: { rgb: 'F9FAFB' }, patternType: 'solid' }),
           border: isTotalRow ? { ...borderAll, top: borderDouble.top } : borderAll,
           alignment: {
             horizontal: columns[C]?.type === 'currency' ? 'right' : 'left',
-            vertical:   'center',
-            wrapText:   false,
+            vertical: 'center',
+            wrapText: false,
           },
           numFmt: columns[C]?.type === 'currency' ? '#,##0.00' : undefined,
-        };
-      } else {
-        // Title area formatting
-        ws[addr].s = {
-          font: { name: 'Arial', sz: R === 0 ? 12 : 10, bold: true },
-          alignment: { horizontal: 'center' }
         };
       }
     }
   }
 
+  const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
   XLSX.writeFile(wb, filename);
 }
