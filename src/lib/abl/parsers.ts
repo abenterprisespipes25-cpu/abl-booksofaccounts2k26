@@ -428,10 +428,10 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
       const colC = String(row[2] ?? '').trim();  // No.
       const colD = String(row[3] ?? '').trim();  // Posting
       const colE = String(row[4] ?? '').trim();  // Name (Supplier)
-      const colF = String(row[5] ?? '').trim();  // Memo/Description
-      const colG = String(row[6] ?? '').trim();  // Account
-      const colH = String(row[7] ?? '').trim();  // Debit
-      const colI = String(row[8] ?? '').trim();  // Credit
+      const colF = String(row[5] ?? '').trim();  // Account (User says Column F)
+      const colG = String(row[6] ?? '').trim();  // Debit
+      const colH = String(row[7] ?? '').trim();  // Credit (User says Column H)
+
 
       const iso = toISODate(row[0]);
       const isHeaderRow = iso !== null && colC !== '' && colE !== '';
@@ -444,25 +444,25 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
           no: colC,
           posting: colD,
           supplier: colE,
-          memo: colF,
-          account: colG,
-          debit: num(colH),
-          credit: num(colI),
+          account: colF,
+          debit: num(colG),
+          credit: num(colH),
           splitRows: []
         };
+
         if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
-      } else if (colG !== '' && currentHeader !== null) {
+      } else if (colF !== '' && currentHeader !== null) {
         currentHeader.splitRows.push({
           date: currentHeader.date,
           transactionType: currentHeader.transactionType,
           no: currentHeader.no,
           supplier: currentHeader.supplier,
-          memo: colF !== '' ? colF : currentHeader.memo,
-          account: colG,
-          debit: num(colH),
-          credit: num(colI)
+          account: colF,
+          debit: num(colG),
+          credit: num(colH)
         });
       }
+
     }
     if (currentHeader) transactions.push(currentHeader);
 
