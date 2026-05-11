@@ -355,7 +355,8 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         sundries.forEach((s, idx) => {
           allRows.push({
             ...entry,
-            // Only put fixed totals on the first row to avoid double counting in report totals
+            // Only put cash amount and fixed totals on the first row
+            cash_amount: idx === 0 ? entry.cash_amount : 0,
             ...(idx === 0 ? fixedTotals : {}),
             sundries_acct_title: s.acct_title,
             sundries_dr: s.dr,
@@ -363,6 +364,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
             id: crypto.randomUUID()
           });
         });
+
       }
     }
   }
