@@ -41,10 +41,16 @@ const DEFAULT_COLUMNS = [
 
 interface GeneratedRow {
   date: string;
-  name: string;
-  description: string;
-  reference: string;
+  payee: string;
+  particulars: string;
+  pcvNo: string;
+  cvNo: string;
+  checkNo: string;
+  fund: string;
   amounts: Record<string, number>;
+  sundryTitle?: string;
+  sundryDr?: number;
+  sundryCr?: number;
 }
 
 export default function CDBReportGenerator() {
@@ -112,9 +118,10 @@ export default function CDBReportGenerator() {
 
       const result: GeneratedRow[] = [];
       let currentDate = "";
-      let currentName = "";
-      let currentDesc = "";
+      let currentPayee = "";
+      let currentParticulars = "";
       let currentRef = "";
+      let currentType = "";
 
       for (let i = headerIdx + 1; i < rawData.length; i++) {
         const r = rawData[i];
@@ -124,9 +131,15 @@ export default function CDBReportGenerator() {
         if (dateVal) {
           currentDate = dateVal instanceof Date ? dateVal.toISOString().split('T')[0] : String(dateVal);
         }
-        if (r[colName]) currentName = String(r[colName]);
-        if (r[colDesc]) currentDesc = String(r[colDesc]);
+        if (r[colName]) currentPayee = String(r[colName]);
+        if (r[colDesc]) currentParticulars = String(r[colDesc]);
         if (r[colRef]) currentRef = String(r[colRef]);
+        
+        // Try to determine if it's a Check or Petty Cash based on "No." or "Type" if colType existed
+        // Since we don't have colType, we'll use No. logic or default to Check
+        const isPetty = currentRef.toUpperCase().includes('PCV');
+        const pcvNo = isPetty ? currentRef : "";
+        const cvNo = !isPetty ? currentRef : "";
 
         const account = String(r[colAcct] || "").toUpperCase();
         const debit = parseFloat(String(r[colDr]).replace(/,/g, '')) || 0;
@@ -138,7 +151,6 @@ export default function CDBReportGenerator() {
         let matchedColId = "";
         
         if (credit > 0) {
-          // If credit, it goes to CASH or ACCOUNTS PAYABLE depending on transaction type
           if (account.includes("PAYABLE")) {
             matchedColId = "ACCOUNTS_PAYABLE_TRADE";
           } else {
@@ -153,13 +165,32 @@ export default function CDBReportGenerator() {
           }
         }
 
+        let existingRow = result.find(x => x.date === currentDate && x.payee === currentPayee && x.particulars === currentParticulars && (x.pcvNo === pcvNo || x.cvNo === cvNo));
+        if (!existingRow) {
+          existingRow = { 
+            date: currentDate, 
+            payee: currentPayee, 
+            particulars: currentParticulars, 
+            pcvNo, cvNo, checkNo: "", fund: "",
+            amounts: {} 
+          };
+          result.push(existingRow);
+        }
+
         if (matchedColId) {
-          let existingRow = result.find(x => x.date === currentDate && x.name === currentName && x.reference === currentRef && x.description === currentDesc);
-          if (!existingRow) {
-            existingRow = { date: currentDate, name: currentName, description: currentDesc, reference: currentRef, amounts: {} };
-            result.push(existingRow);
-          }
           existingRow.amounts[matchedColId] = (existingRow.amounts[matchedColId] || 0) + (debit > 0 ? debit : credit);
+        } else {
+          if (!existingRow.sundryTitle) {
+            existingRow.sundryTitle = account;
+            existingRow.sundryDr = debit;
+            existingRow.sundryCr = credit;
+          } else {
+            result.push({
+              date: "", payee: "", particulars: "", pcvNo: "", cvNo: "", checkNo: "", fund: "",
+              amounts: {},
+              sundryTitle: account, sundryDr: debit, sundryCr: credit
+            });
+          }
         }
       }
       
@@ -176,12 +207,16 @@ export default function CDBReportGenerator() {
   const getTotals = () => {
     const t: Record<string, number> = {};
     columns.forEach(c => t[c.id] = 0);
+    let sDr = 0;
+    let sCr = 0;
     reportData.forEach(r => {
       Object.entries(r.amounts).forEach(([k, v]) => {
         t[k] = (t[k] || 0) + v;
       });
+      if (r.sundryDr) sDr += r.sundryDr;
+      if (r.sundryCr) sCr += r.sundryCr;
     });
-    return t;
+    return { ...t, sundryDr: sDr, sundryCr: sCr };
   };
 
   const totals = getTotals();
@@ -193,20 +228,21 @@ export default function CDBReportGenerator() {
     wsData.push([`For the month of ${month || '________'}`]);
     wsData.push([]);
     
-    const h1 = ["DATE", "NAME", "DESCRIPTION", "REFERENCE NO."];
-    const h2 = ["", "", "", ""];
-    columns.forEach(c => { h1.push(c.line1); h2.push(c.line2); });
+    const h1 = ["DATE", "", "", "PETTY CASH", "CHECK", "", "", "CASH", "ACCOUNTS", "VAT", "DIRECT", "OVERHEAD", "COMM., LIGHT &", "COMM., LIGHT &", "COMM., LIGHT &", "ITW", "ITW", "ITW", "SSS, PHIC & HDMF", "SSS/HDMF", "OUTSIDE SERVICES", "TRAVEL & TRANSPORTATION", "TRAVEL & TRANSPORTATION", "TRAVEL & TRANSPORTATION", "TRAVEL & TRANSPORTATION", "SALES COMM", "Delivery", "ADVANCES TO", "S U N D R I E S", "S U N D R I E S", "S U N D R I E S"];
+    const h2 = [month || "JAN., 2025", "PAYEE", "PARTICULARS", "VOUCHER NO.", "VOUCHER NO.", "CHECK NO.", "FUND", "AMOUNT", "PAYABLE-TRADE", "INPUT TAX", "LABOR / BASIC", "LABOR / BASIC", "WATER-PLANT", "WATER-ADMIN", "WATER-SALES", "TOP 10K CORP.", "COMPENSATION", "AT SOURCE", "PREM. PAYABLE", "LOAN PAYABLE", "Construction", "ADMIN.", "SALES", "CONSTRUCTION", "WATER", "3RD PARTY PAY", "Expenses", "OFFICERS/EMP.", "ACCT. TITLE", "DR", "CR"];
     wsData.push(h1);
     wsData.push(h2);
 
     reportData.forEach(r => {
-      const row = [r.date, r.name, r.description, r.reference];
+      const row = [r.date, r.payee, r.particulars, r.pcvNo, r.cvNo, r.checkNo, r.fund];
       columns.forEach(c => row.push(r.amounts[c.id] || 0));
+      row.push(r.sundryTitle || "", r.sundryDr || 0, r.sundryCr || 0);
       wsData.push(row);
     });
 
-    const tRow = ["TOTAL", "", "", ""];
+    const tRow = ["TOTAL", "", "", "", "", "", ""];
     columns.forEach(c => tRow.push(totals[c.id] || 0));
+    tRow.push("", totals.sundryDr || 0, totals.sundryCr || 0);
     wsData.push(tRow);
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -214,10 +250,16 @@ export default function CDBReportGenerator() {
     // Auto-size columns slightly
     ws["!cols"] = [
       { wch: 12 }, // Date
-      { wch: 25 }, // Name
-      { wch: 25 }, // Description
-      { wch: 15 }, // Ref No
-      ...columns.map(() => ({ wch: 15 })) // Amount cols
+      { wch: 25 }, // Payee
+      { wch: 25 }, // Particulars
+      { wch: 15 }, // PCV
+      { wch: 15 }, // CV
+      { wch: 15 }, // Check No
+      { wch: 10 }, // Fund
+      ...columns.map(() => ({ wch: 15 })), // Amount cols
+      { wch: 25 }, // Sundry Title
+      { wch: 15 }, // Sundry Dr
+      { wch: 15 }  // Sundry Cr
     ];
 
     const range = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:A1');
@@ -245,27 +287,42 @@ export default function CDBReportGenerator() {
     doc.text(`For the month of ${month || '________'}`, 40, 55);
 
     const head = [
-      ["DATE", "NAME", "REF", ...columns.map(c => `${c.line1}\n${c.line2}`)]
+      ["DATE", "PAYEE", "PARTICULARS", "PCV", "CV", "CHK", "FND", ...columns.map(c => `${c.line1}\n${c.line2}`), "SUNDRIES\nTITLE", "SUNDRIES\nDR", "SUNDRIES\nCR"]
     ];
     
     const body = reportData.map(r => [
       r.date, 
-      r.name.substring(0, 15), 
-      r.reference, 
-      ...columns.map(c => r.amounts[c.id] ? fmt(r.amounts[c.id]) : '')
+      r.payee.substring(0, 15), 
+      r.particulars.substring(0, 15), 
+      r.pcvNo,
+      r.cvNo,
+      r.checkNo,
+      r.fund,
+      ...columns.map(c => r.amounts[c.id] ? fmt(r.amounts[c.id]) : ''),
+      r.sundryTitle || '',
+      r.sundryDr ? fmt(r.sundryDr) : '',
+      r.sundryCr ? fmt(r.sundryCr) : ''
     ]);
 
     body.push([
-      "TOTAL", "", "", 
-      ...columns.map(c => totals[c.id] ? fmt(totals[c.id]) : '')
+      "TOTAL", "", "", "", "", "", "",
+      ...columns.map(c => totals[c.id] ? fmt(totals[c.id]) : ''),
+      "",
+      totals.sundryDr ? fmt(totals.sundryDr) : '',
+      totals.sundryCr ? fmt(totals.sundryCr) : ''
     ]);
 
     autoTable(doc, {
       head, body,
       startY: 70,
-      styles: { fontSize: 5, cellPadding: 2 },
+      styles: { fontSize: 3.5, cellPadding: 1 },
       headStyles: { fillColor: [15, 39, 68], textColor: 255, halign: 'center' },
-      columnStyles: Object.fromEntries(columns.map((_, i) => [i + 3, { halign: 'right' }]))
+      columnStyles: {
+        ...Object.fromEntries(columns.map((_, i) => [i + 7, { halign: 'right' }])),
+        [columns.length + 7]: { halign: 'left', cellWidth: 40 },
+        [columns.length + 8]: { halign: 'right' },
+        [columns.length + 9]: { halign: 'right' }
+      }
     });
 
     doc.save(`CDB_Report_${month || 'Output'}.pdf`);
@@ -352,44 +409,60 @@ export default function CDBReportGenerator() {
             <table className="w-full text-left border-collapse min-w-max">
               <thead>
                 <tr>
-                  <th colSpan={4} className="p-4 border border-white/10 text-center font-bold text-white bg-[#0a1628]">TRANSACTION DETAILS</th>
+                  <th colSpan={7} className="p-4 border border-white/10 text-center font-bold text-white bg-[#0a1628]">TRANSACTION DETAILS</th>
                   <th colSpan={columns.length} className="p-4 border border-white/10 text-center font-bold text-white bg-[#0a1628]">ACCOUNT DISTRIBUTIONS</th>
+                  <th colSpan={3} className="p-4 border border-white/10 text-center font-bold text-white bg-[#0a1628]">S U N D R I E S</th>
                 </tr>
                 <tr className="bg-[#0f2744]">
                   <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Date</th>
-                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Name</th>
-                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Description</th>
-                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Ref No.</th>
+                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Payee</th>
+                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Particulars</th>
+                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">PCV No.</th>
+                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">CV No.</th>
+                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">CHK No.</th>
+                  <th className="px-4 py-2 text-[10px] font-black uppercase text-white/70 border border-white/10">Fund</th>
                   {columns.map(c => (
                     <th key={c.id} className="px-3 py-2 text-[9px] font-black uppercase text-white/70 border border-white/10 text-center whitespace-nowrap leading-tight">
                       {c.line1}<br/>{c.line2}
                     </th>
                   ))}
+                  <th className="px-3 py-2 text-[9px] font-black uppercase text-white/70 border border-white/10 text-center leading-tight">ACCT.<br/>TITLE</th>
+                  <th className="px-3 py-2 text-[9px] font-black uppercase text-white/70 border border-white/10 text-center leading-tight">DR</th>
+                  <th className="px-3 py-2 text-[9px] font-black uppercase text-white/70 border border-white/10 text-center leading-tight">CR</th>
                 </tr>
               </thead>
               <tbody>
                 {reportData.map((r, i) => (
                   <tr key={i} className="hover:bg-white/[0.02] border-b border-white/5">
                     <td className="px-4 py-2 text-[11px] font-mono text-white/60 border border-white/10">{r.date}</td>
-                    <td className="px-4 py-2 text-[11px] text-white/90 border border-white/10 max-w-[200px] truncate" title={r.name}>{r.name}</td>
-                    <td className="px-4 py-2 text-[11px] text-white/60 border border-white/10 max-w-[200px] truncate" title={r.description}>{r.description}</td>
-                    <td className="px-4 py-2 text-[11px] font-mono text-white/50 border border-white/10">{r.reference}</td>
+                    <td className="px-4 py-2 text-[11px] text-white/90 border border-white/10 max-w-[150px] truncate" title={r.payee}>{r.payee}</td>
+                    <td className="px-4 py-2 text-[11px] text-white/60 border border-white/10 max-w-[150px] truncate" title={r.particulars}>{r.particulars}</td>
+                    <td className="px-4 py-2 text-[11px] font-mono text-white/50 border border-white/10">{r.pcvNo}</td>
+                    <td className="px-4 py-2 text-[11px] font-mono text-white/50 border border-white/10">{r.cvNo}</td>
+                    <td className="px-4 py-2 text-[11px] font-mono text-white/50 border border-white/10">{r.checkNo}</td>
+                    <td className="px-4 py-2 text-[11px] font-mono text-white/50 border border-white/10">{r.fund}</td>
                     {columns.map(c => (
                       <td key={c.id} className="px-3 py-2 text-[11px] font-mono text-right border border-white/10 text-emerald-400/90">
                         {fmt(r.amounts[c.id])}
                       </td>
                     ))}
+                    <td className="px-3 py-2 text-[11px] text-white/60 border border-white/10 max-w-[150px] truncate" title={r.sundryTitle}>{r.sundryTitle}</td>
+                    <td className="px-3 py-2 text-[11px] font-mono text-right border border-white/10 text-emerald-400/90">{fmt(r.sundryDr)}</td>
+                    <td className="px-3 py-2 text-[11px] font-mono text-right border border-white/10 text-rose-400/90">{fmt(r.sundryCr)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="bg-[#0a1628] font-bold">
-                  <td colSpan={4} className="px-4 py-3 text-right text-xs text-white/50 tracking-widest border border-white/10">GRAND TOTAL</td>
+                  <td colSpan={7} className="px-4 py-3 text-right text-xs text-white/50 tracking-widest border border-white/10">GRAND TOTAL</td>
                   {columns.map(c => (
                     <td key={c.id} className="px-3 py-3 text-[11px] font-mono text-right border border-white/10 text-blue-400">
                       {fmt(totals[c.id])}
                     </td>
                   ))}
+                  <td className="px-3 py-3 text-[11px] border border-white/10"></td>
+                  <td className="px-3 py-3 text-[11px] font-mono text-right border border-white/10 text-blue-400">{fmt(totals.sundryDr)}</td>
+                  <td className="px-3 py-3 text-[11px] font-mono text-right border border-white/10 text-blue-400">{fmt(totals.sundryCr)}</td>
                 </tr>
               </tfoot>
             </table>
