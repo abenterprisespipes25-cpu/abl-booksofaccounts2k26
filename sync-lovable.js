@@ -63,6 +63,19 @@ const sync = async () => {
     return;
   }
 
+  try {
+    const hasRemote = execSync('git config --get remote.origin.url', { cwd: GIT_ROOT }).toString().trim();
+    if (!hasRemote) {
+      console.log('  ⚠️ No git remote "origin" found. Skipping sync.');
+      updateStatus('error', 'No git remote configured');
+      return;
+    }
+  } catch (e) {
+    console.log('  ⚠️ Git remote check failed. Skipping sync to prevent infinite loops.');
+    updateStatus('error', 'Git remote check failed');
+    return;
+  }
+
   isSyncing = true;
   pendingSync = false;
 

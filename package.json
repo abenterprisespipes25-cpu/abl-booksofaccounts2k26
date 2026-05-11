@@ -4,14 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"node sync-lovable.cjs\"",
+    "dev": "vite",
+    "dev:sync": "concurrently \"vite\" \"node sync-lovable.js\"",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sync": "node sync-lovable.cjs"
+    "sync": "node sync-lovable.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
