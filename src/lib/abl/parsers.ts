@@ -250,10 +250,10 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           type: String(row[1] ?? '').trim(),
           no: colC,
           payee: colD,
-          particulars: String(row[4] ?? '').trim(),
-          account: colF,
+          particulars: String(row[4] ?? '').trim(), // Column E
+          account: colF, // Column F
           debit: colG,
-          credit: colH,
+          credit: colH, // Column H
           splitRows: []
         };
         if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
@@ -265,6 +265,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           credit: colH
         });
       }
+
     }
     if (currentHeader) transactions.push(currentHeader);
 
@@ -275,18 +276,22 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       const folio = folioFor("CDB", my);
 
       const entryId = crypto.randomUUID();
+      const isCashAccount = CASH_FIELDS_CDB.some(cf => tx.account.includes(cf) || cf.includes(tx.account));
+      
       const entry: any = {
         id: entryId,
         entry_date: tx.date,
         payee: tx.payee,
-        particulars: tx.particulars,
+        particulars: tx.particulars, // Comes from Column E (Index 4)
         petty_cash_voucher: tx.particulars.match(/PCF\s*(\S+)/i)?.[1] || "",
         check_voucher_no: tx.particulars.match(/CV\s*(\d+)/i)?.[0] || "",
         check_no: tx.no,
         fund: fund,
-        cash_amount: tx.credit, // CASH AMOUNT source is Credit Col H
+        // User: ONLY reflect amount if account matches the bank/cash list
+        cash_amount: isCashAccount ? tx.credit : 0, 
         month_year: my
       };
+
 
       // Initialize all fixed columns to 0
       CDB_FIXED_FIELDS.forEach(f => entry[f] = 0);
