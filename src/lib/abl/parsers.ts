@@ -386,8 +386,10 @@ const PB_EXACT: Record<string, string> = {
   "General and Administrative Expenses:G&A-Fuel, Oil and Lubricants": "fuel_admin",
   "Cost of Manufacturing:Overhead:OH-Fuel, Oil and Lubricants": "fuel_plant",
   "Selling Expenses:Selling-Fuel, Oil and Lubricants": "fuel_sales",
+  "Cost of Construction:Cons-Fuel, Oil and Lubricants": "fuel_construction",
   "Withholding Tax Payable - Expanded - Top Corp.": "itw_top_10t",
 };
+
 const PB_FIELD_TO_GL: Array<{ field: string; account: string; side: "dr" | "cr" }> = [
   { field: "ap_trade_cr", account: "Accounts Payable", side: "cr" },
   { field: "input_tax", account: "Input VAT", side: "dr" },
@@ -504,13 +506,17 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
         } else if (acct.toLowerCase().includes("input vat")) {
           entry.input_tax = round2(entry.input_tax + dr);
         } else if (acct.startsWith("Cost of Construction:") && acct.toLowerCase().includes("fuel")) {
-          entry.fuel_construction = round2(entry.fuel_construction + dr);
+          entry.fuel_construction = round2((entry.fuel_construction || 0) + dr);
         } else {
           const field = PB_EXACT[acct];
           if (field) {
-            const amt = field === "itw_top_10t" ? cr : dr;
-            entry[field] = round2(entry[field] + amt);
+            // User says ITW TOP 10T should be negative (it's a credit in column H)
+            const amt = field === "itw_top_10t" ? -cr : dr;
+            entry[field] = round2((entry[field] || 0) + amt);
           } else {
+
+
+
             sundries.push({
               pb_entry_id: entryId,
               acct_title: acct,
@@ -567,20 +573,36 @@ export function parseSalesBook(buf: ArrayBuffer): ParsedResult<any> {
 
     for (const r of data) {
       const iso = toISODate(r[0]);
-      const amt = num(r[7]);
-      if (!iso || amt === 0) continue;
-      const tax = String(r[taxIdx] ?? "").toLowerCase();
-      const isNoVat = !tax || tax.includes("no vat") || tax.includes("exempt");
+      if (!iso) continue;
+      
+      const type = String(r[1] ?? "").trim();
+      const invoiceNo = String(r[2] ?? "").trim();
+      const customer = String(r[3] ?? "").trim();
+      const amt = num(r[7]); // Column H (Amount)
+      
+      if (amt === 0) continue;
+
       const net = round2(amt);
-      const vat = isNoVat ? 0 : round2(net * 0.12);
-      const gross = round2(net + vat);
+      const vat = round2(net * 0.12); // User: "formula ani kay sa NET SALES x 0.12"
+      const gross = round2(net + vat); // User: "NET SALES + OUTPUT TAX"
       const my = monthYearFromISO(iso);
+      
       allParsed.push({
-        month_year: my, entry_date: iso, invoice_no: String(r[2] ?? ""), customer_name: String(r[3] ?? ""),
-        transaction_type: String(r[1] ?? ""), cash_amount: String(r[1]) === "Sales Receipt" ? gross : 0,
-        ar_trade: String(r[1]) === "Invoice" ? gross : 0, net_sales: net, output_tax: vat, gross_sales: gross,
+        month_year: my,
+        entry_date: iso,
+        invoice_no: invoiceNo,
+        customer_name: customer,
+        transaction_type: type,
+        // User: Sales Receipt -> CASH, Invoice -> A/R TRADE
+        cash_amount: type.toLowerCase().includes("receipt") ? gross : 0,
+        ar_trade: type.toLowerCase().includes("invoice") ? gross : 0,
+        c_deposits: 0,
+        net_sales: net,
+        output_tax: vat,
+        gross_sales: gross,
       });
     }
+
   }
 
   const addGL = (my: string, date: string, account: string, debit: number, credit: number, particulars: string) => {
