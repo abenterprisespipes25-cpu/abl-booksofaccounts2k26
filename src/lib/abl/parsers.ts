@@ -214,6 +214,14 @@ const CDB_FIXED_MAPPING: Record<string, { field: string; match_type?: "startswit
 const CDB_FIXED_FIELDS = new Set(Object.values(CDB_FIXED_MAPPING).map(v => v.field));
 const CREDIT_FIELDS_CDB = new Set(["itw_top_10k_corp", "itw_compensation", "itw_at_source", "sss_phic_hdmf_prem", "sss_hdmf_loan"]);
 
+const CASH_FIELDS_CDB = [
+  "CIB:BDO Admin", "CIB:BDO Plant", "CIB:BDO ATSA", "CIB:LBP", "CIB:BDO Dollar Savings",
+  "COH:Petty Cash Fund - ASTL Plant", "COH:Petty Cash Fund - Leonilo Acuña",
+  "COH:Petty Cash Fund - Michael White", "COH:Revolving Fund - Office",
+  "CIB:Eastwest", "CIB:Eastwest Dollar Savings", "CIB:LBP DOST",
+  "COH:Petty Cash Fund- Vanessa Anne Duce", "COH:Petty Cash Fund - ASTL Construction"
+];
+
 
 export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
