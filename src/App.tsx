@@ -17,6 +17,7 @@ const TrialBalance = lazy(() => import("./pages/TrialBalance"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
 const JournalEntries = lazy(() => import("./pages/JournalEntries"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const CDBReportGenerator = lazy(() => import("./pages/CDBReportGenerator"));
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => {
               <Route path="/trial-balance" element={<TrialBalance />} />
               <Route path="/journal-entries" element={<JournalEntries />} />
               <Route path="/maintenance" element={<Maintenance />} />
+              <Route path="/reports/cdb" element={<CDBReportGenerator />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
