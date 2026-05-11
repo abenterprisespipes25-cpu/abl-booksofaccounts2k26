@@ -29,24 +29,37 @@ export interface ModuleMeta {
 export const FUND_MAP: Record<string, string> = {
   "CIB:BDO Admin": "BDO-ADMIN",
   "CIB:BDO Plant": "BDO-PLANT",
-  "CIB:BDO Dollar": "BDO-DOLLAR",
+  "CIB:BDO ATSA": "BDO-ATSA",
   "CIB:LBP": "LBP",
-  "CIB:PCF-Michael": "PCF-MICHAEL",
-  "CIB:PCF-Lemuel": "PCF-LEMUEL",
-  "CIB:RF-Office": "RF-OFFICE",
-  "CIB:BDO": "BDO",
+  "CIB:BDO Dollar Savings": "BDO-DOLLAR-SAV",
+  "COH:Petty Cash Fund - ASTL Plant": "PCF-PLANT",
+  "COH:Petty Cash Fund - Leonilo Acuña": "PCF-LEONILO",
+  "COH:Petty Cash Fund - Michael White": "PCF-MICHAEL",
+  "COH:Revolving Fund - Office": "RF-OFFICE",
+  "CIB:Eastwest": "EASTWEST",
+  "CIB:Eastwest Dollar Savings": "EASTWEST-DOLLAR",
+  "CIB:LBP DOST": "LBP-DOST",
+  "COH:Petty Cash Fund- Vanessa Anne Duce": "PCF-VANESSA",
+  "COH:Petty Cash Fund - ASTL Construction": "PCF-CONST",
 };
 
 export const FUND_TO_GL_ACCOUNT: Record<string, string> = {
   "BDO-ADMIN": "CIB - BDO Admin",
   "BDO-PLANT": "CIB - BDO Plant",
-  "BDO-DOLLAR": "CIB - BDO Dollar",
-  LBP: "CIB - LBP",
-  "PCF-MICHAEL": "Petty Cash Fund - Michael",
-  "PCF-LEMUEL": "Petty Cash Fund - Lemuel",
+  "BDO-ATSA": "CIB - BDO ATSA",
+  "LBP": "CIB - LBP",
+  "BDO-DOLLAR-SAV": "CIB - BDO Dollar Savings",
+  "PCF-PLANT": "Petty Cash Fund - ASTL Plant",
+  "PCF-LEONILO": "Petty Cash Fund - Leonilo Acuña",
+  "PCF-MICHAEL": "Petty Cash Fund - Michael White",
   "RF-OFFICE": "Revolving Fund - Office",
-  BDO: "CIB - BDO",
+  "EASTWEST": "CIB - Eastwest",
+  "EASTWEST-DOLLAR": "CIB - Eastwest Dollar Savings",
+  "LBP-DOST": "CIB - LBP DOST",
+  "PCF-VANESSA": "Petty Cash Fund- Vanessa Anne Duce",
+  "PCF-CONST": "Petty Cash Fund - ASTL Construction",
 };
+
 
 export function mapFund(raw: string): string {
   if (!raw) return "";
