@@ -200,8 +200,7 @@ const CDB_FIXED_MAPPING: Record<string, { field: string; match_type?: "startswit
   "Withholding Tax Payable - Final": { field: "itw_at_source" },
   "SSS, PHIC and HDMF Premiums Payable": { field: "sss_phic_hdmf_prem" },
   "SSS and HDMF Loans Payable": { field: "sss_hdmf_loan" },
-  "Cost of Construction:Cons-Outside Services": { field: "outside_services_construction" },
-  "Cost of Manufacturing:Overhead:OH-Outside Service": { field: "outside_services_construction" },
+  "Selling Expenses:Selling-Outside Services": { field: "outside_services_construction" },
   "General and Administrative Expenses:G&A-Travel and Transportation": { field: "travel_admin" },
   "Selling Expenses:Selling-Travel and Transportation": { field: "travel_sales" },
   "Cost of Construction:Cons-Travel and Transportation": { field: "travel_construction" },
@@ -302,13 +301,12 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         id: entryId,
         entry_date: tx.date,
         payee: tx.payee,
-        particulars: tx.particulars, // Comes from Column E (Index 4)
-        petty_cash_voucher: tx.particulars.match(/PCF\s*(\S+)/i)?.[1] || "",
-        check_voucher_no: tx.particulars.match(/CV\s*(\d+)/i)?.[0] || "",
+        particulars: tx.particulars, 
+        petty_cash_voucher: tx.particulars.toUpperCase().includes("PCF") ? tx.particulars.match(/PCF\s*(\S+)/i)?.[1] || tx.particulars : "",
+        check_voucher_no: tx.particulars.toUpperCase().includes("CV") ? tx.particulars.match(/CV\s*(\d+)/i)?.[0] || tx.particulars : "",
         check_no: tx.no,
         fund: fund,
-        // User: ONLY reflect amount if account matches the bank/cash list
-        cash_amount: isCashAccount ? tx.credit : 0, 
+        cash_amount: 0, // Will be calculated
         month_year: my
       };
 
@@ -374,14 +372,28 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       // 2. Second pass: Create the rows
       if (sundries.length === 0) {
         // Just one row with everything
-        allRows.push({ ...entry, ...fixedTotals });
+        // Calculate Cash Amount as sum of all categorized debits - categorized credits
+        let totalCash = 0;
+        Object.keys(fixedTotals).forEach(f => {
+          if (CREDIT_FIELDS_CDB.has(f)) totalCash -= fixedTotals[f];
+          else totalCash += fixedTotals[f];
+        });
+        allRows.push({ ...entry, ...fixedTotals, cash_amount: round2(totalCash) });
       } else {
         // One row per sundry
         sundries.forEach((s, idx) => {
+          let totalCash = 0;
+          if (idx === 0) {
+            Object.keys(fixedTotals).forEach(f => {
+              if (CREDIT_FIELDS_CDB.has(f)) totalCash -= fixedTotals[f];
+              else totalCash += fixedTotals[f];
+            });
+            // Also add the sundry if it's a debit? No, sundries are usually debits in CDB unless they are the bank.
+            // But wait, if we are in this block, the "Cash Amount" is the balancing figure.
+          }
           allRows.push({
             ...entry,
-            // Only put cash amount and fixed totals on the first row
-            cash_amount: idx === 0 ? entry.cash_amount : 0,
+            cash_amount: idx === 0 ? round2(totalCash + sundries.reduce((acc, curr) => acc + curr.dr - curr.cr, 0)) : 0,
             ...(idx === 0 ? fixedTotals : {}),
             sundries_acct_title: s.acct_title,
             sundries_dr: s.dr,
@@ -389,7 +401,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
             id: crypto.randomUUID()
           });
         });
-
       }
     }
   }

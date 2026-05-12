@@ -29,9 +29,9 @@ export interface ModuleMeta {
 export const FUND_MAP: Record<string, string> = {
   "CIB:BDO Admin": "BDO-ADMIN",
   "CIB:BDO Plant": "BDO-PLANT",
-  "CIB:BDO ATSA": "BDO-ATSA",
+  "CIB:BDO ATSA": "BDO ATSA",
   "CIB:LBP": "LBP",
-  "CIB:BDO Dollar Savings": "BDO-DOLLAR-SAV",
+  "CIB:BDO Dollar Savings": "BDO-DOLLAR",
   "COH:Petty Cash Fund - ASTL Plant": "PCF-PLANT",
   "COH:Petty Cash Fund - Leonilo Acuña": "PCF-LEONILO",
   "COH:Petty Cash Fund - Michael White": "PCF-MICHAEL",
