@@ -536,6 +536,52 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         </div>
       )}
 
+      {moduleId === "purchase_book" && recapSundriesPB.length > 0 && (
+        <div className="mt-12 space-y-4 animate-in slide-in-from-bottom-4 duration-700">
+          <div className="flex flex-col">
+            <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-rose-500 decoration-4 underline-offset-8">
+              Recapitulation of Sundry Accounts
+            </h3>
+            <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
+              Summarized by account title for {active}
+            </p>
+          </div>
+          
+          <div className="max-w-2xl bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
+                  <th className="px-6 py-3 text-left border-r border-white/10">S U N D R I E S</th>
+                  <th className="px-6 py-3 text-right w-32">Amount</th>
+                  <th className="px-6 py-3 text-right w-32">TOTAL</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {recapSundriesPB.map((s, i) => (
+                  <tr key={i} className="hover:bg-white/5 transition-colors">
+                    <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{s.account}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-white/90 border-r border-white/5">{fmtMoney(s.amount)}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-white/90">{fmtMoney(s.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-rose-500/10 text-white font-bold border-t border-white/20">
+                  <td className="px-6 py-3 text-right border-r border-white/5">GRAND TOTAL</td>
+                  <td className="px-6 py-3 text-right font-mono text-rose-400 border-r border-white/5">
+                    {fmtMoney(recapSundriesPB.reduce((acc, s) => acc + s.amount, 0))}
+                  </td>
+                  <td className="px-6 py-3 text-right font-mono text-rose-400">
+                    {fmtMoney(recapSundriesPB.reduce((acc, s) => acc + s.amount, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
+
 
 
       <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
