@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { MODULES, ModuleId } from "@/lib/abl/config";
-import { sortMonthYears, monthYearToTabLabel, fmtMoney, round2 } from "@/lib/abl/format";
+import { sortMonthYears, monthYearToTabLabel, fmtMoney, fmtDate, round2 } from "@/lib/abl/format";
+import { getCompanySettings } from "@/lib/abl/companySettings";
 
 
 import { parseCDB, parsePurchaseBook, parseSalesBook, parseCashReceipts, ParsedResult } from "@/lib/abl/parsers";
@@ -9,7 +10,7 @@ import { exportExcel, exportPDF } from "@/lib/abl/exporters";
 import { MonthTabs } from "./MonthTabs";
 import { LedgerTable } from "./LedgerTable";
 import { Button } from "@/components/ui/button";
-import { Upload, FileSpreadsheet, FileText, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { Upload, FileSpreadsheet, FileText, Printer, Save, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
