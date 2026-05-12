@@ -134,16 +134,34 @@ export async function exportExcel(opts: {
 
   // Add Sundries Recap if provided
   if (recapSundries && recapSundries.length > 0) {
+    const isPB = bookName.toUpperCase().includes("PURCHASE");
     const recapAoa: any[][] = [
       [],
       ["RECAPITULATION OF SUNDRY ACCOUNTS"],
-      ["S U N D R I E S", "Debit", "Credit"],
+      isPB ? ["S U N D R I E S", "Amount", "TOTAL"] : ["S U N D R I E S", "Debit", "Credit"],
     ];
-    recapSundries.forEach(s => recapAoa.push([s.account, s.dr || "", s.cr || ""]));
+    recapSundries.forEach(s => {
+      if (isPB) {
+        const val = (s as any).amount || 0;
+        recapAoa.push([s.account, val, val]);
+      } else {
+        recapAoa.push([s.account, s.dr || "", s.cr || ""]);
+      }
+    });
+    
+    // Total row
+    const grandTotal = recapSundries.reduce((acc, s) => acc + ((s as any).amount || s.dr || 0), 0);
+    if (isPB) {
+      recapAoa.push(["GRAND TOTAL", grandTotal, grandTotal]);
+    } else {
+      recapAoa.push(["TOTAL", grandTotal, recapSundries.reduce((acc, s) => acc + (s.cr || 0), 0)]);
+    }
+
     const recapWs = XLSX.utils.aoa_to_sheet(recapAoa);
     recapWs["!cols"] = [{ wch: 40 }, { wch: 15 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(wb, recapWs, "Recap - Sundries (CDB)");
+    XLSX.utils.book_append_sheet(wb, recapWs, isPB ? "Recap - Sundries (PB)" : "Recap - Sundries (CDB)");
   }
+
 
   // Add PB Sundries Recap if provided
   // Note: For PB, we use recapSundries as well but it only has 'account' and 'amount'
