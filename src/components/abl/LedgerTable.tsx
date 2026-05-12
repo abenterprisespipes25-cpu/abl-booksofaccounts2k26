@@ -1,6 +1,6 @@
+import React, { useState, useEffect } from "react";
 import { ColumnDef } from "@/lib/abl/config";
 import { fmtDate, fmtMoney } from "@/lib/abl/format";
-import React from "react";
 
 // Helper: format a cell value by column type
 const fmtCell = (val: any, type: string) => {
@@ -27,10 +27,15 @@ export function LedgerTable({
   bookName?: string;
   monthYear?: string;
 }) {
-  const [displayCount, setDisplayCount] = React.useState(200);
+  const [displayCount, setDisplayCount] = useState(200);
+
+  // Reset display count when rows change (e.g. month tab switch)
+  useEffect(() => {
+    setDisplayCount(200);
+  }, [rows]);
 
   // Progressive loading for large datasets to prevent browser hang
-  React.useEffect(() => {
+  useEffect(() => {
     if (rows.length > displayCount) {
       const timer = setTimeout(() => {
         setDisplayCount(prev => Math.min(prev + 500, rows.length));
@@ -191,5 +196,3 @@ export function LedgerTable({
   );
 }
 
-// Need React import for CSSProperties
-import React from "react";
