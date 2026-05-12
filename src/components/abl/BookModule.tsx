@@ -535,11 +535,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         }
       }
     </style></head><body>
-      <div style="text-align:center;margin-bottom:15px">
-        <div style="font-size:14pt;font-weight:900">${settings.company_name || "JHAYMARTS INDUSTRIES, INC."}</div>
-        <div style="font-size:9pt;color:#666">${settings.address || ""}</div>
-        <div style="font-size:11pt;font-weight:900;margin-top:5px;text-decoration:underline">${bookName}</div>
-        <div style="font-size:10pt;margin-top:2px">FOR THE MONTH OF ${active || "N/A"}</div>
+      <div style="text-align:left;margin-bottom:15px">
+        <div style="font-size:12pt;font-weight:900">${settings.company_name || "JHAYMARTS INDUSTRIES, INC."}</div>
+        <div style="font-size:11pt;font-weight:900;margin-top:2px">${bookName}</div>
+        <div style="font-size:10pt;font-weight:900;margin-top:2px">${active ? active.toUpperCase() : "PERIOD N/A"}</div>
       </div>
       <table><thead>${headHtml}</thead><tbody>${rowHtml}</tbody></table>
       <div class="page-footer"></div>

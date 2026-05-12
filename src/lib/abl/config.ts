@@ -120,8 +120,8 @@ export const PB_COLUMNS: ColumnDef[] = [
   { header: "FUEL-SALES", header1: "Fuel & oil", header2: "Sales", field: "fuel_sales", type: "currency", width: 12 },
   { header: "FUEL-CONS", header1: "Fuel & oil", header2: "Construction", field: "fuel_construction", type: "currency", width: 12 },
   { header: "ITW TOP 10T", header1: "", header2: "ITW - Top 10T", field: "itw_top_10t", type: "currency", width: 12, creditCol: true },
-  { header: "SUNDRIES-ACCT TITLE", header1: "SUNDRIES", header2: "ACCT TITLE", field: "sundries_acct_title", type: "text", width: 30 },
-  { header: "SUNDRIES AMOUNT", header1: "SUNDRIES", header2: "AMOUNT", field: "sundries_amount", type: "currency", width: 14.45 },
+  { header: "SUNDRIES-ACCT TITLE", header1: "S U N D R I E S", header2: "Account Title", field: "sundries_acct_title", type: "text", width: 30 },
+  { header: "SUNDRIES AMOUNT", header1: "S U N D R I E S", header2: "Amount", field: "sundries_amount", type: "currency", width: 14.45 },
 ];
 
 export const SB_COLUMNS: ColumnDef[] = [
