@@ -448,41 +448,40 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
       const colF = String(row[5] ?? '').trim();  // Account (User says Column F)
       const colG = String(row[6] ?? '').trim();  // Debit
       const colH = String(row[7] ?? '').trim();  // Credit (User says Column H)
-
-
       const iso = toISODate(row[0]);
       const type = colB.toLowerCase();
-      // Only process "Bill" or "Item Receipt" types as per user request to avoid Journal Entry duplication
-      const isHeaderRow = iso !== null && colC !== '' && colE !== '' && (type.includes("bill") || type.includes("item receipt"));
-
-      if (isHeaderRow) {
-
+      
+      // A row with both a date and a type is the start of a transaction block in QuickBooks Detail exports.
+      if (iso !== null && type !== "") {
+        // Finalize previous transaction if it exists
         if (currentHeader) transactions.push(currentHeader);
-        currentHeader = {
-          date: iso,
-          transactionType: colB,
-          no: colC,
-          posting: colD,
-          supplier: colE,
-          account: colF,
-          debit: num(colG),
-          credit: num(colH),
-          splitRows: []
-        };
+        currentHeader = null; // Default to null for each new block
 
+        // Only start a new header if it's a Bill or Item Receipt
+        const isBill = type.includes("bill") || type.includes("item receipt");
+        if (isBill && colC !== "" && colE !== "") {
+          currentHeader = {
+            date: iso,
+            transactionType: colB,
+            no: colC,
+            posting: colD,
+            supplier: colE,
+            account: colF,
+            debit: num(colG),
+            credit: num(colH),
+            splitRows: []
+          };
+        }
+        
         if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
       } else if (colF !== '' && currentHeader !== null) {
+        // This is a split row belonging to the current processable Bill
         currentHeader.splitRows.push({
-          date: currentHeader.date,
-          transactionType: currentHeader.transactionType,
-          no: currentHeader.no,
-          supplier: currentHeader.supplier,
           account: colF,
           debit: num(colG),
           credit: num(colH)
         });
       }
-
     }
     if (currentHeader) transactions.push(currentHeader);
 
