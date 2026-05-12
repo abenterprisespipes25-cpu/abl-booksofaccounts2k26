@@ -188,12 +188,12 @@ export default function PurchaseBookModule() {
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10"
                   disabled={!rows.length}
-                  onClick={() => exportExcel({ filename: `${filenameBase}.xlsx`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows })}>
+                  onClick={() => exportExcel({ filename: `${filenameBase}.xlsx`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows, recapSundries: sundriesRecap as any })}>
             <FileSpreadsheet className="h-4 w-4 mr-2" /> Excel
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10"
                   disabled={!rows.length}
-                  onClick={() => exportPDF({ filename: `${filenameBase}.pdf`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows })}>
+                  onClick={() => exportPDF({ filename: `${filenameBase}.pdf`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows, recapSundries: sundriesRecap as any })}>
             <FileText className="h-4 w-4 mr-2" /> PDF
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10"
