@@ -238,11 +238,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       if (conflictMonths.length > 0) {
         setPending({ parsed, fileName: file.name, conflictMonths });
       } else {
-        // Strict month validation: If a tab is active, ensure the file contains that month
-        if (active && !monthsInFile.includes(active)) {
-          toast.error(`Invalid month. The file does not contain transactions for ${active}.`);
-          return;
-        }
+        // Auto-switch: If the file contains months, we'll process them all.
+        // We no longer block uploads that don't match the active tab.
         await commit(parsed, file.name);
       }
 
