@@ -17,11 +17,15 @@ const fmtCell = (val: any, type: string) => {
 export function LedgerTable({
   columns, rows, showTotals = true,
   emptyMessage = "No entries. Upload an Excel file to get started.",
+  bookName,
+  monthYear
 }: {
   columns: ColumnDef[];
   rows: any[];
   showTotals?: boolean;
   emptyMessage?: string;
+  bookName?: string;
+  monthYear?: string;
 }) {
   const [displayCount, setDisplayCount] = React.useState(200);
 
@@ -100,6 +104,16 @@ export function LedgerTable({
       <div style={{ overflowX: "auto", maxHeight: "70vh", overflowY: "auto" }}>
         <table style={{ width: "100%", minWidth: "max-content", borderCollapse: "collapse" }}>
           <thead style={{ position: "sticky", top: 0, zIndex: 20 }}>
+            {/* Report Header */}
+            {bookName && monthYear && (
+              <tr>
+                <th colSpan={columns.length} style={{ background: "#fff", color: "#000", textAlign: "center", padding: "16px", border: BORDER }}>
+                  <div style={{ fontSize: "1.2rem", fontWeight: 900, marginBottom: "4px" }}>JHAYMARTS INDUSTRIES, INC.</div>
+                  <div style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "4px" }}>{bookName}</div>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>FOR THE MONTH OF {monthYear}</div>
+                </th>
+              </tr>
+            )}
             {/* Header Row 1 — Grouped labels (CDB only) */}
             {hasDoubleHeaders && (
               <tr>

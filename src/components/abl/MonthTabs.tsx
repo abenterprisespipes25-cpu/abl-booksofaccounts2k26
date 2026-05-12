@@ -22,7 +22,7 @@ export function MonthTabs({
             {grouped[year].map((m) => {
               const isActive = active === m;
               const p = parseMonthYear(m);
-              const label = p ? m.split(" ")[0] : m;
+              const label = p ? m.split(" ")[0].substring(0, 3) : m;
               return (
                 <button
                   key={m}
