@@ -180,10 +180,9 @@ export async function exportExcel(opts: {
           alignment: { horizontal: "center", vertical: "center", wrapText: true },
         };
       } else if (isData) {
-        const altBg = R % 2 === 0 ? "FFFFFF" : "F2F5FA";
         ws[addr].s = {
           font: { name: "Arial", sz: 9, color: { rgb: "000000" } },
-          fill: { fgColor: { rgb: altBg }, patternType: "solid" },
+          fill: { fgColor: { rgb: "FFFFFF" }, patternType: "solid" },
           border: BORDER_THIN,
           alignment: {
             horizontal: isCurrency ? "right" : "left",
@@ -206,6 +205,11 @@ export async function exportExcel(opts: {
     }
   }
 
+  // ── Freeze Panes ──
+  ws["!views"] = [
+    { state: "frozen", xSplit: 0, ySplit: DATA_START_ROW }
+  ];
+
   // ── Print settings ──
   ws["!pageSetup"] = {
     orientation: "landscape",
@@ -214,7 +218,7 @@ export async function exportExcel(opts: {
     fitToHeight: 0,
     paperSize: 9, // A4
   };
-  ws["!printOptions"] = { gridLines: true };
+  ws["!printOptions"] = { gridLines: false }; // We have our own borders
   ws["!margins"] = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
 
   // ── Workbook ──

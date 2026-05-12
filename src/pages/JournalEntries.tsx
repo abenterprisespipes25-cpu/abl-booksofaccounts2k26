@@ -250,6 +250,8 @@ export default function JournalEntries() {
       { s: { r: 2, c: 0 }, e: { r: 2, c: 7 } },
     ];
 
+    ws["!views"] = [{ state: "frozen", xSplit: 0, ySplit: 4 }];
+
     XLSX.utils.book_append_sheet(wb, ws, "Journal");
     XLSX.writeFile(wb, `ABL_JOURNAL_${new Date().toISOString().slice(0, 10)}.xlsx`, { cellStyles: true });
   }

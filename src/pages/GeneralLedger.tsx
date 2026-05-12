@@ -151,7 +151,7 @@ function buildAccountSheet(data: TAccountData, settings: CompanySettings) {
         fill:  isHdr ? { fgColor:{ rgb:"0F2744" }, patternType:"solid" }
              : isTot ? { fgColor:{ rgb:"DBEAFE" }, patternType:"solid" }
              : isBal ? { fgColor:{ rgb:"FEF9C3" }, patternType:"solid" }
-             : { fgColor:{ rgb: R%2===0?"FFFFFF":"F9FAFB" }, patternType:"solid" },
+             : { fgColor:{ rgb: "FFFFFF" }, patternType:"solid" },
         border: isTot ? bTot : bAll,
         alignment: {
           horizontal: (C===3||C===8) ? "right" : (C===2||C===7) ? "center" : "left",
@@ -161,6 +161,7 @@ function buildAccountSheet(data: TAccountData, settings: CompanySettings) {
       };
     }
   }
+  ws["!views"] = [{ state: "frozen", xSplit: 0, ySplit: HEADER_ROW + 1 }];
   return ws;
 }
 
@@ -192,8 +193,7 @@ function printAccount(data: TAccountData, settings: CompanySettings) {
   for (let i = 0; i < maxLen; i++) {
     const dr = data.debitRows[i];
     const cr = data.creditRows[i];
-    const bg = i%2===0 ? "#fff" : "#f9fafb";
-    rows += `<tr style="background:${bg}">
+    rows += `<tr>
       <td style="${BD}">${dr?.date??""}</td><td style="${BD}">${dr?.particulars??""}</td>
       <td style="text-align:center;${BD}">${dr?.folio??""}</td>
       <td style="text-align:right;${BD}">${dr?fmt(dr.amount):""}</td>
@@ -461,9 +461,8 @@ function TAccountCard({ data, settings, onEditEntries }: { data: TAccountData; s
             {Array.from({ length: maxRows }, (_, i) => {
               const dr = data.debitRows[i];
               const cr = data.creditRows[i];
-              const bg = i % 2 === 0 ? "#fff" : "#f9fafb";
               return (
-                <tr key={i} style={{ background: bg }}>
+                <tr key={i}>
                   <td style={S.td()}>{dr?.date ?? ""}</td>
                   <td style={S.td()}>{dr?.particulars ?? ""}</td>
                   <td style={S.td("center")}>{dr?.folio ?? ""}</td>

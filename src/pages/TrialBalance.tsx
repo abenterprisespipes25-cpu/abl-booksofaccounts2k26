@@ -151,6 +151,8 @@ export default function TrialBalance() {
       ws["!merges"].push({ s: { r: i, c: 0 }, e: { r: i, c: 2 } });
     }
 
+    ws["!views"] = [{ state: "frozen", xSplit: 0, ySplit: 7 }];
+
     XLSX.utils.book_append_sheet(wb, ws, "Trial Balance");
     XLSX.writeFile(wb, `ABL_TRIAL_BALANCE_${dateSuffix}.xlsx`, { cellStyles: true });
   }
