@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fmtMoney } from "@/lib/abl/format";
 import { getCompanySettings } from "@/lib/abl/companySettings";
 
-type Row = { name: string; top10t: number; top10k: number; atSource: number; total: number };
+type Row = { name: string; top10k: number; atSource: number; total: number };
 
 export default function ITWSummary() {
   const [loading, setLoading] = useState(true);
@@ -52,12 +52,12 @@ export default function ITWSummary() {
     const map = new Map<string, Row>();
     const get = (name: string) => {
       const key = (name || "(Unnamed)").trim() || "(Unnamed)";
-      if (!map.has(key)) map.set(key, { name: key, top10t: 0, top10k: 0, atSource: 0, total: 0 });
+      if (!map.has(key)) map.set(key, { name: key, top10k: 0, atSource: 0, total: 0 });
       return map.get(key)!;
     };
     for (const r of pbRows) {
       const v = Number(r.itw_top_10t) || 0;
-      if (v) get(r.supplier).top10t += v;
+      if (v) get(r.supplier).top10k += v;
     }
     for (const r of cdbRows) {
       const k = Number(r.itw_top_10k_corp) || 0;
@@ -69,7 +69,7 @@ export default function ITWSummary() {
       }
     }
     const out = Array.from(map.values());
-    out.forEach(r => { r.total = r.top10t + r.top10k + r.atSource; });
+    out.forEach(r => { r.total = r.top10k + r.atSource; });
     return out
       .filter(r => r.total !== 0)
       .filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
@@ -77,8 +77,8 @@ export default function ITWSummary() {
   }, [pbRows, cdbRows, search]);
 
   const totals = useMemo(() => grouped.reduce(
-    (t, r) => ({ top10t: t.top10t + r.top10t, top10k: t.top10k + r.top10k, atSource: t.atSource + r.atSource, total: t.total + r.total }),
-    { top10t: 0, top10k: 0, atSource: 0, total: 0 }
+    (t, r) => ({ top10k: t.top10k + r.top10k, atSource: t.atSource + r.atSource, total: t.total + r.total }),
+    { top10k: 0, atSource: 0, total: 0 }
   ), [grouped]);
 
   const exportExcel = async () => {
@@ -89,12 +89,12 @@ export default function ITWSummary() {
       ["WITHHOLDING TAX SUMMARY (ITW)"],
       [`FOR THE MONTH OF ${monthYear}`],
       [],
-      ["NAME", "ITW TOP 10T", "ITW TOP 10K", "ITW AT SOURCE", "TOTAL"],
-      ...grouped.map(r => [r.name, r.top10t || "", r.top10k || "", r.atSource || "", r.total || ""]),
-      ["TOTAL", totals.top10t, totals.top10k, totals.atSource, totals.total],
+      ["NAME", "ITW TOP 10K", "ITW AT SOURCE", "TOTAL"],
+      ...grouped.map(r => [r.name, r.top10k || "", r.atSource || "", r.total || ""]),
+      ["TOTAL", totals.top10k, totals.atSource, totals.total],
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 40 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 18 }];
+    ws["!cols"] = [{ wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "ITW Summary");
     XLSX.writeFile(wb, `ITW_Summary_${monthYear.replace(/\s+/g, "_")}.xlsx`);
@@ -155,7 +155,6 @@ export default function ITWSummary() {
               <thead className="bg-[#0f2744]">
                 <tr>
                   <th className="px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white/70 border border-white/10">Name</th>
-                  <th className="px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white/70 border border-white/10 text-right">ITW TOP 10T</th>
                   <th className="px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white/70 border border-white/10 text-right">ITW TOP 10K</th>
                   <th className="px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white/70 border border-white/10 text-right">ITW AT SOURCE</th>
                   <th className="px-4 py-3 text-[11px] font-black uppercase tracking-widest text-white/70 border border-white/10 text-right">Total</th>
@@ -165,7 +164,6 @@ export default function ITWSummary() {
                 {grouped.map((r, i) => (
                   <tr key={r.name} className={i % 2 ? "bg-white/[0.02]" : ""}>
                     <td className="px-4 py-2 text-[12px] text-white/80 border border-white/[0.05]">{r.name}</td>
-                    <td className="px-4 py-2 text-[12px] font-mono text-right text-white/80 border border-white/[0.05]">{r.top10t ? fmtMoney(r.top10t) : ""}</td>
                     <td className="px-4 py-2 text-[12px] font-mono text-right text-white/80 border border-white/[0.05]">{r.top10k ? fmtMoney(r.top10k) : ""}</td>
                     <td className="px-4 py-2 text-[12px] font-mono text-right text-white/80 border border-white/[0.05]">{r.atSource ? fmtMoney(r.atSource) : ""}</td>
                     <td className="px-4 py-2 text-[12px] font-mono text-right text-blue-300 font-bold border border-white/[0.05]">{fmtMoney(r.total)}</td>
@@ -175,7 +173,6 @@ export default function ITWSummary() {
               <tfoot>
                 <tr className="bg-[#0f172a] border-t-2 border-blue-500/40">
                   <td className="px-4 py-3 text-[12px] font-bold uppercase tracking-widest text-white/60 border border-white/10">Grand Total</td>
-                  <td className="px-4 py-3 text-[12px] font-mono font-bold text-right text-blue-300 border border-white/10">{fmtMoney(totals.top10t)}</td>
                   <td className="px-4 py-3 text-[12px] font-mono font-bold text-right text-blue-300 border border-white/10">{fmtMoney(totals.top10k)}</td>
                   <td className="px-4 py-3 text-[12px] font-mono font-bold text-right text-blue-300 border border-white/10">{fmtMoney(totals.atSource)}</td>
                   <td className="px-4 py-3 text-[12px] font-mono font-bold text-right text-blue-300 border border-white/10">{fmtMoney(totals.total)}</td>
