@@ -412,20 +412,20 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <p className="text-xl font-black text-white">{fmtMoney(stats.totalAmount)}</p>
         </div>
         <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total VAT/Input</p>
-          <p className="text-xl font-black text-emerald-400">{fmtMoney(stats.totalVat)}</p>
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">
+            {moduleId === "purchase_book" ? "TOTAL ITW TOP 10T" : "Total VAT"}
+          </p>
+          <p className="text-xl font-black text-blue-400">
+            {moduleId === "purchase_book" ? fmtMoney(stats.totalItwTop10) : fmtMoney(stats.totalVat)}
+          </p>
         </div>
+
         <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
           <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total ITW</p>
           <p className="text-xl font-black text-red-400">{fmtMoney(stats.totalItw)}</p>
         </div>
-        {moduleId === "purchase_book" && (
-          <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total ITW TOP 10</p>
-            <p className="text-xl font-black text-rose-500">{fmtMoney(stats.totalItwTop10)}</p>
-          </div>
-        )}
       </div>
+
 
 
 
