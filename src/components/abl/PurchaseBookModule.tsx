@@ -126,16 +126,34 @@ export default function PurchaseBookModule() {
   }
 
   const totals = useMemo(() => {
-    const t = { purchases: 0, vat: 0, inputTax: 0, count: 0 };
+    const t = { purchases: 0, itwTop10t: 0, inputTax: 0, count: 0 };
     for (const r of rows) {
       const isParent = !!(r.invoice_no || "").trim() && !!(r.supplier || "").trim();
       if (isParent) t.count++;
       t.inputTax += Number(r.input_tax) || 0;
-      t.vat += Number(r.input_tax) || 0;
+      t.itwTop10t += Number(r.itw_top_10t) || 0;
       t.purchases += (Number(r.ap_trade_cr) || 0);
     }
     return t;
   }, [rows]);
+
+  const sundriesRecap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const acct = String(r.sundries_acct_title || "").trim();
+      const amt = Number(r.sundries_amount) || 0;
+      if (!acct || amt === 0) continue;
+      map.set(acct, (map.get(acct) || 0) + amt);
+    }
+    return Array.from(map.entries())
+      .map(([account, amount]) => ({ account, amount }))
+      .sort((a, b) => a.account.localeCompare(b.account));
+  }, [rows]);
+
+  const sundriesTotal = useMemo(
+    () => sundriesRecap.reduce((s, r) => s + r.amount, 0),
+    [sundriesRecap]
+  );
 
   const yearOptions = useMemo(() => {
     const cur = now.getFullYear();
@@ -170,12 +188,12 @@ export default function PurchaseBookModule() {
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10"
                   disabled={!rows.length}
-                  onClick={() => exportExcel({ filename: `${filenameBase}.xlsx`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows })}>
+                  onClick={() => exportExcel({ filename: `${filenameBase}.xlsx`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows, recapSundries: sundriesRecap as any })}>
             <FileSpreadsheet className="h-4 w-4 mr-2" /> Excel
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10"
                   disabled={!rows.length}
-                  onClick={() => exportPDF({ filename: `${filenameBase}.pdf`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows })}>
+                  onClick={() => exportPDF({ filename: `${filenameBase}.pdf`, bookName: "PURCHASE BOOK", monthYear, columns: meta.columns, rows, recapSundries: sundriesRecap as any })}>
             <FileText className="h-4 w-4 mr-2" /> PDF
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10"
@@ -209,7 +227,7 @@ export default function PurchaseBookModule() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 no-print">
         <Stat label="Transactions" value={totals.count.toLocaleString()} />
         <Stat label="Total Purchases" value={fmtMoney(totals.purchases)} />
-        <Stat label="Total VAT" value={fmtMoney(totals.vat)} />
+        <Stat label="Total ITW Top 10T" value={fmtMoney(totals.itwTop10t)} />
         <Stat label="Total Input Tax" value={fmtMoney(totals.inputTax)} />
       </div>
 
@@ -232,6 +250,43 @@ export default function PurchaseBookModule() {
           </div>
         )}
       </div>
+
+      {/* Recapitulation of Sundry Accounts */}
+      {sundriesRecap.length > 0 && (
+        <div className="bg-[#0a1628] rounded-2xl border border-white/10 overflow-hidden shadow-2xl print-area">
+          <div className="px-6 py-4 border-b border-white/10 bg-white/5">
+            <h3 className="text-sm font-black uppercase tracking-[0.25em] text-white">
+              Recapitulation of Sundry Accounts
+            </h3>
+            <p className="text-xs text-white/40 mt-1">{monthYear}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#0f2744] text-white">
+                <tr>
+                  <th className="px-6 py-3 text-left text-[11px] font-black uppercase tracking-widest">S U N D R I E S</th>
+                  <th className="px-6 py-3 text-right text-[11px] font-black uppercase tracking-widest w-48">Amount</th>
+                  <th className="px-6 py-3 text-right text-[11px] font-black uppercase tracking-widest w-48">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sundriesRecap.map((s, i) => (
+                  <tr key={s.account} className={i % 2 === 0 ? "bg-white/[0.02]" : ""}>
+                    <td className="px-6 py-2.5 text-white/90">{s.account}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-white/90">{fmtMoney(s.amount)}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-white/90">{fmtMoney(s.amount)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-blue-600/20 border-t-2 border-blue-500/40">
+                  <td className="px-6 py-3 text-white font-black uppercase tracking-wider text-xs">Grand Total</td>
+                  <td className="px-6 py-3 text-right font-mono font-black text-white">{fmtMoney(sundriesTotal)}</td>
+                  <td className="px-6 py-3 text-right font-mono font-black text-white">{fmtMoney(sundriesTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Upload summary */}
       <Dialog open={!!summary} onOpenChange={(o) => !o && setSummary(null)}>

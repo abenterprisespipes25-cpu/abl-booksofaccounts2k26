@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Search, Notifications, AccountCircle, Settings, Dashboard, Payments, ShoppingCart, ReceiptLong, AccountBalanceWallet, AccountTree, Analytics, EditNote, Summarize, SettingsSuggest, Menu } from "@mui/icons-material";
 
 const NAV = [
+<<<<<<< HEAD
   { to: "/", label: "Home", icon: <Dashboard />, end: true },
   { to: "/cdb", label: "Cash Disbursements", icon: <Payments /> },
   { to: "/purchase-book", label: "Purchase Book", icon: <ShoppingCart /> },
@@ -18,6 +19,18 @@ const REPORTING_NAV = [
   { to: "/journal-entries", label: "Journal Entries", icon: <EditNote /> },
   { to: "/reports/cdb", label: "ITW Summary", icon: <Summarize /> },
   { to: "/maintenance", label: "Maintenance", icon: <SettingsSuggest /> },
+=======
+  { to: "/", label: "Home", end: true },
+  { to: "/cdb", label: "Cash Disbursements" },
+  { to: "/purchase-book", label: "Purchase Book" },
+  { to: "/sales-book", label: "Sales Book" },
+  { to: "/cash-receipts", label: "Cash Receipts" },
+  { to: "/general-ledger", label: "General Ledger" },
+  { to: "/trial-balance", label: "Trial Balance" },
+  { to: "/journal-entries", label: "Journal Entries" },
+  { to: "/itw-summary", label: "ITW Summary" },
+  { to: "/maintenance", label: "Maintenance" },
+>>>>>>> 9f546043360481fd03796ddc4a1339304b3aa59a
 ];
 
 export default function AppLayout() {
