@@ -6,8 +6,8 @@ import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = __dirname;
-// The git root is 2 levels up based on the folder structure observed
-const GIT_ROOT = path.resolve(PROJECT_ROOT, '../../'); 
+// GIT_ROOT = project root (where .git folder lives)
+const GIT_ROOT = PROJECT_ROOT;
 
 const WATCH_PATHS = [
   'src',
@@ -109,24 +109,28 @@ const sync = async () => {
   updateStatus('syncing', 'Fetching remote updates...');
   let pullSuccess = false;
   let retryCount = 0;
-  const maxRetries = 5;
+  const maxRetries = 3;
 
   while (!pullSuccess && retryCount < maxRetries) {
-    if (runGit('git pull origin main --rebase')) {
+    try {
+      execSync('git pull origin main --rebase --no-edit', { cwd: GIT_ROOT, stdio: 'inherit' });
       pullSuccess = true;
-    } else {
+    } catch (e) {
+      // Abort any stuck rebase before retrying
+      try { execSync('git rebase --abort', { cwd: GIT_ROOT, stdio: 'ignore' }); } catch (_) {}
       retryCount++;
-      console.log(`  ⚠️ Pull failed. Retrying in 10s... (${retryCount}/${maxRetries})`);
-      updateStatus('error', `Pull failed, retry ${retryCount}/${maxRetries}...`);
-      await new Promise(r => setTimeout(r, 10000));
+      if (retryCount < maxRetries) {
+        console.log(`  ⚠️ Pull failed. Retrying in 5s... (${retryCount}/${maxRetries})`);
+        updateStatus('error', `Pull failed, retry ${retryCount}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, 5000));
+      }
     }
   }
 
   if (!pullSuccess) {
-    console.error('  🛑 Critical: Git pull failed.');
-    updateStatus('error', 'Sync paused: Conflict or Network issue');
-    isSyncing = false;
-    return;
+    // Non-fatal: push anyway since we already committed
+    console.warn('  ⚠️ Pull failed after retries — attempting direct push.');
+    updateStatus('error', 'Pull failed — pushing directly');
   }
 
   // 5. Push with Retry
