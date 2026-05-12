@@ -454,38 +454,42 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
   const handlePrint = async () => {
     const settings = await getCompanySettings();
-    const BD = "border:1px solid #000;padding:2px 4px;font-size:6.5pt;white-space:nowrap";
-    const TH = "background:#0f2744;color:#fff;font-weight:700;padding:4px 6px;font-size:7pt;border:1px solid #000;white-space:nowrap;text-align:center";
+    const BD = "border:1px solid #000;padding:3px 5px;font-size:7pt;white-space:nowrap";
+    const TH = "background:#fff;color:#000;font-weight:700;padding:5px;font-size:7.5pt;border:1.5px solid #000;text-align:center;vertical-align:middle";
     
-    // Check if we have double headers
+    // Grouped header logic
     const hasH2 = meta.columns.some(c => c.header2);
+    let headRow1 = "";
+    let headRow2 = "";
     
-    let headHtml = "<tr>";
     if (hasH2) {
-      // Row 1
-      meta.columns.forEach((c, i) => {
-        const h1 = c.header1 ?? c.header;
-        // Basic grouping logic for h1 merges
-        let span = 1;
-        let skip = false;
-        if (i > 0 && (meta.columns[i-1].header1 ?? meta.columns[i-1].header) === h1) skip = true;
-        if (!skip) {
-           let j = i + 1;
-           while (j < meta.columns.length && (meta.columns[j].header1 ?? meta.columns[j].header) === h1) { span++; j++; }
-           headHtml += `<th style="${TH}" colspan="${span}">${h1}</th>`;
+      for (let i = 0; i < meta.columns.length; i++) {
+        const c = meta.columns[i];
+        const h1 = c.header1;
+        const h2 = c.header2;
+        
+        if (h1 && h1 !== "") {
+          // Check for grouping
+          let span = 1;
+          let j = i + 1;
+          while (j < meta.columns.length && meta.columns[j].header1 === h1) { span++; j++; }
+          
+          headRow1 += `<th style="${TH}" colspan="${span}">${h1}</th>`;
+          // Add row 2 subheaders
+          for (let k = i; k < j; k++) {
+            headRow2 += `<th style="${TH}">${meta.columns[k].header2 || ""}</th>`;
+          }
+          i = j - 1; // skip merged
+        } else {
+          // No group, use rowspan
+          headRow1 += `<th style="${TH}" rowspan="2">${c.header}</th>`;
         }
-      });
-      headHtml += "</tr><tr>";
-      // Row 2
-      meta.columns.forEach(c => {
-        headHtml += `<th style="${TH}">${c.header2 ?? ""}</th>`;
-      });
+      }
     } else {
       meta.columns.forEach(c => {
-        headHtml += `<th style="${TH}">${c.header}</th>`;
+        headRow1 += `<th style="${TH}">${c.header}</th>`;
       });
     }
-    headHtml += "</tr>";
 
     let rowHtml = "";
     rows.forEach(r => {
@@ -500,7 +504,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     });
 
     // Totals
-    rowHtml += `<tr style="background:#dbeafe;font-weight:700">`;
+    rowHtml += `<tr style="background:#f8fafc;font-weight:700">`;
     meta.columns.forEach((c, i) => {
       if (c.type === "currency") {
         const sum = rows.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
@@ -540,7 +544,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         <div style="font-size:11pt;font-weight:900;margin-top:2px">${bookName}</div>
         <div style="font-size:10pt;font-weight:900;margin-top:2px">${active ? active.toUpperCase() : "PERIOD N/A"}</div>
       </div>
-      <table><thead>${headHtml}</thead><tbody>${rowHtml}</tbody></table>
+      <table>
+        <thead>
+          <tr>${headRow1}</tr>
+          ${headRow2 ? `<tr>${headRow2}</tr>` : ""}
+        </thead>
+        <tbody>${rowHtml}</tbody>
+      </table>
       <div class="page-footer"></div>
     </body></html>`;
 
