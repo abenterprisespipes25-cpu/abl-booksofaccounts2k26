@@ -327,6 +327,12 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           source_module: 'CDB', source_ref: no
         });
 
+        // Skip the main FUND account itself from being distributed to fixed columns or sundries
+        // because it is already captured in the 'FUND' and 'CASH AMOUNT' columns.
+        if (acct === fundAccount && cr > 0) {
+          continue;
+        }
+
         let mapped = false;
         
         // Critical Rule: Input VAT on credit side goes to SUNDRIES
