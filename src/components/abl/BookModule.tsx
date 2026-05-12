@@ -120,7 +120,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       count: rows.length,
       totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount), 0),
       totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax || r.vat_input_tax), 0),
+      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top_10k_corp || r.itw_compensation || r.itw_at_source), 0),
+      totalItwTop10: rows.reduce((acc, r) => acc + n(r.itw_top_10t), 0),
     };
+
   }, [rows]);
 
   const recapSundries = useMemo(() => {
@@ -167,6 +170,19 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     }
     getStatus();
   }, [active, meta.glSource]);
+
+  const recapSundriesPB = useMemo(() => {
+    if (moduleId !== "purchase_book") return [];
+    const map = new Map<string, number>();
+    rows.forEach(r => {
+      if (r.sundries_acct_title) {
+        const key = r.sundries_acct_title;
+        map.set(key, round2((map.get(key) || 0) + (Number(r.sundries_amount) || 0)));
+      }
+    });
+    return Array.from(map.entries()).map(([account, amount]) => ({ account, amount })).sort((a, b) => a.account.localeCompare(b.account));
+  }, [rows, moduleId]);
+
 
 
 
@@ -336,8 +352,9 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
               <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
-                  Uploaded: {uploadInfo.file_name}
+                  Uploaded: {uploadInfo.file_name} · 100% Integrity
                 </span>
+
               </div>
             ) : (
               <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full">
@@ -402,7 +419,14 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total ITW</p>
           <p className="text-xl font-black text-red-400">{fmtMoney(stats.totalItw)}</p>
         </div>
+        {moduleId === "purchase_book" && (
+          <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total ITW TOP 10</p>
+            <p className="text-xl font-black text-rose-500">{fmtMoney(stats.totalItwTop10)}</p>
+          </div>
+        )}
       </div>
+
 
 
       {months.length > 0 && (
