@@ -12,7 +12,7 @@ const NAV = [
   { to: "/general-ledger", label: "General Ledger" },
   { to: "/trial-balance", label: "Trial Balance" },
   { to: "/journal-entries", label: "Journal Entries" },
-  { to: "/reports/cdb", label: "CDB Report" },
+  { to: "/itw-summary", label: "ITW Summary" },
   { to: "/maintenance", label: "Maintenance" },
 ];
 
