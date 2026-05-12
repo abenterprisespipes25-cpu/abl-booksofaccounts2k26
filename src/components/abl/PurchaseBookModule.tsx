@@ -227,7 +227,7 @@ export default function PurchaseBookModule() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 no-print">
         <Stat label="Transactions" value={totals.count.toLocaleString()} />
         <Stat label="Total Purchases" value={fmtMoney(totals.purchases)} />
-        <Stat label="Total VAT" value={fmtMoney(totals.vat)} />
+        <Stat label="Total ITW Top 10T" value={fmtMoney(totals.itwTop10t)} />
         <Stat label="Total Input Tax" value={fmtMoney(totals.inputTax)} />
       </div>
 
