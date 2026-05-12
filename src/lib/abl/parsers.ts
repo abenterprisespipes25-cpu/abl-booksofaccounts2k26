@@ -235,19 +235,30 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     if (h < 0) continue;
     const dataStartIndex = h + 1;
     
-    let currentHeader: any = null;
-    const transactions: any[] = [];
+    let lastIso: string | null = null;
+    let lastNo = "";
+    let lastPayee = "";
+    let lastParticulars = "";
 
     for (let i = dataStartIndex; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.every(cell => String(cell).trim() === '')) continue;
 
-      const iso = toISODate(row[0]);
-      const colC = String(row[2] ?? '').trim();  // No.
-      const colD = String(row[3] ?? '').trim();  // Name (Payee)
+      let iso = toISODate(row[0]);
+      let colC = String(row[2] ?? '').trim();  // No. (Check No)
+      let colD = String(row[3] ?? '').trim();  // Name (Payee)
+      let colE = String(row[4] ?? '').trim();  // Memo/Particulars
       const colF = String(row[5] ?? '').trim();  // Account
       const colG = num(row[6]);  // Debit
       const colH = num(row[7]);  // Credit
+
+      // If we have an account, but no date/no/payee, auto-fill from previous
+      if (colF !== "") {
+        if (iso) lastIso = iso; else iso = lastIso;
+        if (colC) lastNo = colC; else colC = lastNo;
+        if (colD) lastPayee = colD; else colD = lastPayee;
+        if (colE) lastParticulars = colE; else colE = lastParticulars;
+      }
 
       const isHeaderRow = iso !== null && (colC !== '' || colD !== '');
 
@@ -258,22 +269,21 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           type: String(row[1] ?? '').trim(),
           no: colC,
           payee: colD,
-          particulars: String(row[4] ?? '').trim(), // Column E
-          account: colF, // Column F
+          particulars: colE, // Column E
+          account: colF, 
           debit: colG,
-          credit: colH, // Column H
+          credit: colH,
           splitRows: []
         };
         if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
       } else if (colF !== '' && currentHeader !== null) {
         currentHeader.splitRows.push({
           account: colF,
-          particulars: String(row[4] ?? '').trim() || currentHeader.particulars,
+          particulars: colE || currentHeader.particulars,
           debit: colG,
           credit: colH
         });
       }
-
     }
     if (currentHeader) transactions.push(currentHeader);
 
