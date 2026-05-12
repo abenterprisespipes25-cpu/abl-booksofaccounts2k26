@@ -24,6 +24,28 @@ const PARSERS: Record<ModuleId, (buf: ArrayBuffer) => ParsedResult<any>> = {
   cash_receipts: parseCashReceipts,
 };
 
+// ─── Global in-memory cache (persists while the app tab is open) ───────────
+// Keyed by moduleId → { months: string[], rows: Record<month_year, any[]> }
+type ModuleCache = { months: string[]; rows: Record<string, any[]> };
+const moduleCache = new Map<string, ModuleCache>();
+
+function getCacheForModule(moduleId: string): ModuleCache {
+  if (!moduleCache.has(moduleId)) {
+    moduleCache.set(moduleId, { months: [], rows: {} });
+  }
+  return moduleCache.get(moduleId)!;
+}
+
+function invalidateCache(moduleId: string, month?: string) {
+  const c = moduleCache.get(moduleId);
+  if (!c) return;
+  if (month) {
+    delete c.rows[month]; // only clear the affected month
+  } else {
+    moduleCache.delete(moduleId); // full invalidation
+  }
+}
+
 export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const meta = MODULES[moduleId];
   const [months, setMonths] = useState<string[]>([]);
@@ -35,16 +57,36 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const [pending, setPending] = useState<{ parsed: ParsedResult<any>; fileName: string; conflictMonths: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadMonths = useCallback(async () => {
+  const loadMonths = useCallback(async (silent = false) => {
+    const cache = getCacheForModule(moduleId);
+
+    // Serve from cache immediately so navigation feels instant
+    if (cache.months.length > 0 && silent) {
+      setMonths(cache.months);
+      if (!active || !cache.months.includes(active)) {
+        setActive(cache.months[cache.months.length - 1]);
+      }
+    }
+
+    // Always fetch fresh from Supabase in background
     const { data } = await supabase.from(meta.tableName).select("month_year").limit(10000);
     const list = sortMonthYears((data ?? []).map((r: any) => r.month_year));
+    cache.months = list; // update cache
     setMonths(list);
     if (list.length && (!active || !list.includes(active))) setActive(list[list.length - 1]);
     if (!list.length) { setActive(null); setRows([]); }
-  }, [meta.tableName, active]);
+  }, [meta.tableName, active, moduleId]);
 
-  const loadRows = useCallback(async (my: string) => {
-    setLoading(true);
+  const loadRows = useCallback(async (my: string, silent = false) => {
+    const cache = getCacheForModule(moduleId);
+
+    // Serve cached rows instantly — skip the loading skeleton
+    if (cache.rows[my]) {
+      setRows(cache.rows[my]);
+      if (!silent) return; // already have data, no need for full re-fetch unless forced
+    }
+
+    setLoading(!cache.rows[my]); // only show loader if no cached data
     setSyncing(true);
     try {
       // Fetch main entries
@@ -57,8 +99,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       const list = entries ?? [];
       const entryIds = list.map(r => r.id);
 
+      let resultRows: any[] = [];
+
       if (moduleId === "cdb") {
-        setRows(list);
+        resultRows = list;
       } else if (moduleId === "purchase_book") {
         const { data: sundries } = await supabase
           .from("pb_sundries")
@@ -71,17 +115,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           return acc;
         }, {});
 
-        const resultRows: any[] = [];
         for (const tx of list) {
           const txSundries = sundriesMap[tx.id] || [];
-          const isHeaderRow = tx.iso !== null && (tx.colC !== '' || tx.colD !== '');
-          const baseRow = {
+          resultRows.push({
             ...tx,
             sundries_acct_title: txSundries[0]?.acct_title || "",
             sundries_amount: txSundries[0]?.amount || null,
-          };
-          resultRows.push(baseRow);
-
+          });
           for (let i = 1; i < txSundries.length; i++) {
             const s = txSundries[i];
             resultRows.push({
@@ -97,10 +137,12 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
             });
           }
         }
-        setRows(resultRows);
       } else {
-        setRows(list);
+        resultRows = list;
       }
+
+      cache.rows[my] = resultRows; // update cache
+      setRows(resultRows);
     } catch (e) {
       console.error("Error loading rows:", e);
     } finally {
@@ -210,7 +252,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     };
   }, [moduleId, meta.tableName, active, loadMonths, loadRows]);
 
-  useEffect(() => { loadMonths(); }, [loadMonths]);
+  useEffect(() => { loadMonths(true); }, [loadMonths]);
   useEffect(() => { if (active) loadRows(active); }, [active, loadRows]);
 
   async function handleFile(file: File) {
@@ -322,6 +364,9 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
       toast.success(`✅ ${meta.label} updated successfully! ${parsed.rows.length} new entries added for ${targetMonth}`, { id: loaderId });
       
+      // Invalidate cache for all uploaded months so fresh data is loaded next visit
+      monthsInFile.forEach(my => invalidateCache(moduleId, my));
+
       await loadMonths();
       // Auto-switch to the month of the uploaded data
       if (targetMonth) setActive(targetMonth);
