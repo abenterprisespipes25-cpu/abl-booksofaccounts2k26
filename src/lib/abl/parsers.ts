@@ -249,7 +249,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       const colG = num(row[6]);  // Debit
       const colH = num(row[7]);  // Credit
 
-      const isHeaderRow = iso !== null && colC !== '' && colD !== '';
+      const isHeaderRow = iso !== null && (colC !== '' || colD !== '');
 
       if (isHeaderRow) {
         if (currentHeader) transactions.push(currentHeader);

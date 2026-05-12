@@ -30,8 +30,10 @@ export async function exportExcel(opts: {
   columns: ColumnDef[];
   rows: any[];
   recapSundries?: { account: string; dr: number; cr: number }[];
+  recapFunds?: { fund: string; amount: number }[];
 }) {
-  const { filename, bookName, monthYear, columns, rows, recapSundries } = opts;
+  const { filename, bookName, monthYear, columns, rows, recapSundries, recapFunds } = opts;
+
 
   const settings = await getCompanySettings();
   
@@ -130,7 +132,7 @@ export async function exportExcel(opts: {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
 
-  // Add Recap if provided
+  // Add Sundries Recap if provided
   if (recapSundries && recapSundries.length > 0) {
     const recapAoa: any[][] = [
       [],
@@ -140,11 +142,25 @@ export async function exportExcel(opts: {
     recapSundries.forEach(s => recapAoa.push([s.account, s.dr || "", s.cr || ""]));
     const recapWs = XLSX.utils.aoa_to_sheet(recapAoa);
     recapWs["!cols"] = [{ wch: 40 }, { wch: 15 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(wb, recapWs, "Recap");
+    XLSX.utils.book_append_sheet(wb, recapWs, "Recap - Sundries");
+  }
+
+  // Add Fund Recap if provided
+  if (recapFunds && recapFunds.length > 0) {
+    const recapAoa: any[][] = [
+      [],
+      ["RECAPITULATION OF BANK ACCOUNTS"],
+      ["F U N D", "Amount"],
+    ];
+    recapFunds.forEach(f => recapAoa.push([f.fund, f.amount || ""]));
+    const recapWs = XLSX.utils.aoa_to_sheet(recapAoa);
+    recapWs["!cols"] = [{ wch: 40 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, recapWs, "Recap - Bank Accounts");
   }
 
   XLSX.writeFile(wb, filename);
 }
+
 
 
 export async function exportPDF(opts: {
@@ -155,8 +171,10 @@ export async function exportPDF(opts: {
   rows: any[];
   orientation?: "landscape" | "portrait";
   recapSundries?: { account: string; dr: number; cr: number }[];
+  recapFunds?: { fund: string; amount: number }[];
 }) {
-  const { filename, bookName, monthYear, columns, rows, orientation = "landscape", recapSundries } = opts;
+  const { filename, bookName, monthYear, columns, rows, orientation = "landscape", recapSundries, recapFunds } = opts;
+
 
   const settings = await getCompanySettings();
   const doc = new jsPDF({ orientation, unit: "pt", format: "a4" });
@@ -298,6 +316,39 @@ export async function exportPDF(opts: {
     });
   }
 
+  // Add Fund Recap to PDF
+  if (recapFunds && recapFunds.length > 0) {
+    if (y > doc.internal.pageSize.getHeight() - 150) doc.addPage();
+    else y += 30;
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("RECAPITULATION OF BANK ACCOUNTS", 30, y);
+    y += 12;
+
+    const recapHead = [["F U N D", "AMOUNT"]];
+    const recapBody = recapFunds.map(f => [f.fund, fmtMoney(f.amount)]);
+    recapBody.push(["TOTAL", fmtMoney(recapFunds.reduce((acc, f) => acc + f.amount, 0))]);
+
+    autoTable(doc, {
+      head: recapHead,
+      body: recapBody,
+      startY: y,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [15, 39, 68], textColor: 255 },
+      columnStyles: { 0: { cellWidth: 250 }, 1: { halign: "right", cellWidth: 80 } },
+      margin: { left: 30 },
+      didParseCell: (data) => {
+        if (data.row.index === recapBody.length - 1) {
+          data.cell.styles.fillColor = [219, 234, 254];
+          data.cell.styles.fontStyle = "bold";
+        }
+      }
+    });
+  }
+
   doc.save(filename);
 }
+
 

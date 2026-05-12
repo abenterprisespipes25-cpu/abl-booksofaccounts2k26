@@ -74,6 +74,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         const resultRows: any[] = [];
         for (const tx of list) {
           const txSundries = sundriesMap[tx.id] || [];
+          const isHeaderRow = tx.iso !== null && (tx.colC !== '' || tx.colD !== '');
           const baseRow = {
             ...tx,
             sundries_acct_title: txSundries[0]?.acct_title || "",
@@ -136,6 +137,37 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     });
     return Array.from(map.values()).sort((a, b) => a.account.localeCompare(b.account));
   }, [rows, moduleId]);
+
+  const recapFunds = useMemo(() => {
+    if (moduleId !== "cdb") return [];
+    const map = new Map<string, number>();
+    rows.forEach(r => {
+      if (r.fund && !r._is_sub_row) {
+        const key = r.fund;
+        map.set(key, round2((map.get(key) || 0) + (Number(r.cash_amount) || 0)));
+      }
+    });
+    return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
+  }, [rows, moduleId]);
+
+  const [uploadInfo, setUploadInfo] = useState<{ file_name: string; created_at: string } | null>(null);
+
+  useEffect(() => {
+    async function getStatus() {
+      if (!active) return;
+      const { data } = await supabase
+        .from("uploaded_files")
+        .select("file_name, created_at")
+        .eq("module", meta.glSource)
+        .eq("month_year", active)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      setUploadInfo(data);
+    }
+    getStatus();
+  }, [active, meta.glSource]);
+
 
 
 
@@ -300,7 +332,23 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <h2 className="text-2xl font-black text-white tracking-tight">{meta.label}</h2>
           <div className="flex items-center gap-4">
             <p className="text-sm text-white/50 font-medium">{meta.uploadHint}</p>
+            {uploadInfo ? (
+              <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                  Uploaded: {uploadInfo.file_name}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full">
+                <div className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest">
+                  No Data Uploaded
+                </span>
+              </div>
+            )}
             {syncing && (
+
               <div className="sync-indicator">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 <span>⟳ Syncing...</span>
@@ -326,12 +374,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" onClick={() => active && loadRows(active)}>
             <Save className="h-4 w-4 mr-2" /> Save
           </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries })}>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries, recapFunds })}>
             <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
           </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries })}>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries, recapFunds })}>
             <FileText className="h-4 w-4 mr-2" /> Export PDF
           </Button>
+
 
         </div>
       </div>
@@ -374,50 +423,95 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         </div>
       )}
 
-      {moduleId === "cdb" && recapSundries.length > 0 && (
-        <div className="mt-12 space-y-4 animate-in slide-in-from-bottom-4 duration-700">
-          <div className="flex flex-col">
-            <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-blue-500 decoration-4 underline-offset-8">
-              Recapitulation of Sundry Accounts
-            </h3>
-            <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
-              Summarized by account title for {active}
-            </p>
-          </div>
-          
-          <div className="max-w-3xl bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
-                  <th className="px-6 py-3 text-left border-r border-white/10">S U N D R I E S</th>
-                  <th className="px-6 py-3 text-right border-r border-white/10 w-32">Debit</th>
-                  <th className="px-6 py-3 text-right w-32">Credit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {recapSundries.map((s, i) => (
-                  <tr key={i} className="hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{s.account}</td>
-                    <td className="px-6 py-2.5 text-right font-mono text-emerald-400 border-r border-white/5">{s.dr ? fmtMoney(s.dr) : "—"}</td>
-                    <td className="px-6 py-2.5 text-right font-mono text-rose-400">{s.cr ? fmtMoney(s.cr) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-blue-500/10 text-white font-bold border-t border-white/20">
-                  <td className="px-6 py-3 text-right border-r border-white/5">TOTAL</td>
-                  <td className="px-6 py-3 text-right font-mono text-blue-400 border-r border-white/5">
-                    {fmtMoney(recapSundries.reduce((acc, s) => acc + s.dr, 0))}
-                  </td>
-                  <td className="px-6 py-3 text-right font-mono text-blue-400">
-                    {fmtMoney(recapSundries.reduce((acc, s) => acc + s.cr, 0))}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+      {moduleId === "cdb" && (recapSundries.length > 0 || recapFunds.length > 0) && (
+        <div className="mt-12 grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-700">
+          {recapSundries.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex flex-col">
+                <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-blue-500 decoration-4 underline-offset-8">
+                  Recapitulation of Sundry Accounts
+                </h3>
+                <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
+                  Summarized by account title for {active}
+                </p>
+              </div>
+              
+              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
+                      <th className="px-6 py-3 text-left border-r border-white/10">S U N D R I E S</th>
+                      <th className="px-6 py-3 text-right border-r border-white/10 w-32">Debit</th>
+                      <th className="px-6 py-3 text-right w-32">Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {recapSundries.map((s, i) => (
+                      <tr key={i} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{s.account}</td>
+                        <td className="px-6 py-2.5 text-right font-mono text-emerald-400 border-r border-white/5">{s.dr ? fmtMoney(s.dr) : "—"}</td>
+                        <td className="px-6 py-2.5 text-right font-mono text-rose-400">{s.cr ? fmtMoney(s.cr) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-blue-500/10 text-white font-bold border-t border-white/20">
+                      <td className="px-6 py-3 text-right border-r border-white/5">TOTAL</td>
+                      <td className="px-6 py-3 text-right font-mono text-blue-400 border-r border-white/5">
+                        {fmtMoney(recapSundries.reduce((acc, s) => acc + s.dr, 0))}
+                      </td>
+                      <td className="px-6 py-3 text-right font-mono text-blue-400">
+                        {fmtMoney(recapSundries.reduce((acc, s) => acc + s.cr, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {recapFunds.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex flex-col">
+                <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-emerald-500 decoration-4 underline-offset-8">
+                  Recapitulation of Bank Accounts
+                </h3>
+                <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
+                  Summarized by Fund for {active}
+                </p>
+              </div>
+              
+              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
+                      <th className="px-6 py-3 text-left border-r border-white/10">F U N D</th>
+                      <th className="px-6 py-3 text-right w-32">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {recapFunds.map((f, i) => (
+                      <tr key={i} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{f.fund}</td>
+                        <td className="px-6 py-2.5 text-right font-mono text-emerald-400">{fmtMoney(f.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-emerald-500/10 text-white font-bold border-t border-white/20">
+                      <td className="px-6 py-3 text-right border-r border-white/5">TOTAL</td>
+                      <td className="px-6 py-3 text-right font-mono text-emerald-400">
+                        {fmtMoney(recapFunds.reduce((acc, f) => acc + f.amount, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
+
 
 
       <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
