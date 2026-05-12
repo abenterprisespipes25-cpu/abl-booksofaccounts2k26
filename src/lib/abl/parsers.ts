@@ -511,9 +511,19 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
         const dr = sr.debit;
         const cr = sr.credit;
 
-        // Skip individual GL lines for PB to satisfy "credit ra" requirement
-        // Expense distributions will not be posted to GL from the Purchase Book module
-
+        // Accountant Fix: Restore full GL posting (Debits and Credits)
+        // We post every individual split row to the General Ledger.
+        glEntries.push({
+          month_year: my,
+          entry_date: tx.date,
+          account_name: acct,
+          particulars: tx.supplier,
+          folio: folio,
+          debit: dr,
+          credit: cr,
+          source_module: 'PB',
+          source_ref: tx.no
+        });
 
         if (acct.toLowerCase() === "accounts payable") {
           fixedTotals.ap_trade_cr = round2((fixedTotals.ap_trade_cr || 0) + cr);
@@ -540,6 +550,7 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
           }
         }
       }
+
 
       // 1.5 Calculate the A/P TRADE-CR as the sum of all distributions
       // This ensures the report balances: A/P = Sum(Debits) - Sum(Credits other than A/P)
@@ -579,19 +590,23 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
       }
 
       // 3. Post the header row's account to GL (Accountant verified: Credit Liability)
-      // User requested "credit ra" (Credit only) for the Purchase Book GL posting.
-      // We only post the consolidated Accounts Payable credit.
-      glEntries.push({
-        month_year: my,
-        entry_date: tx.date,
-        account_name: "Accounts Payable",
-        particulars: tx.supplier,
-        folio: folio,
-        debit: 0,
-        credit: apSum,
-        source_module: 'PB',
-        source_ref: tx.no
-      });
+      // Check if Accounts Payable was already posted in the splits. 
+      // If not, we post the calculated apSum to ensure the GL balances.
+      const hasAPSplit = tx.splitRows.some(s => s.account.toLowerCase().includes("accounts payable"));
+      if (!hasAPSplit && apSum !== 0) {
+        glEntries.push({
+          month_year: my,
+          entry_date: tx.date,
+          account_name: "Accounts Payable",
+          particulars: tx.supplier,
+          folio: folio,
+          debit: 0,
+          credit: apSum,
+          source_module: 'PB',
+          source_ref: tx.no
+        });
+      }
+
 
 
     }
