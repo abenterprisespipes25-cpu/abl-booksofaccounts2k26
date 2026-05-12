@@ -43,13 +43,14 @@ export interface LedgerTableProps {
   monthYear?: string;
   onSave?: (row: any) => Promise<void>;
   onDelete?: (row: any) => Promise<void>;
+  onPrint?: () => void;
 }
 
 export function LedgerTable({
   columns, rows, showTotals = true,
   emptyMessage = "No entries. Upload an Excel file to get started.",
   bookName, monthYear,
-  onSave, onDelete,
+  onSave, onDelete, onPrint,
 }: LedgerTableProps) {
   const [displayCount, setDisplayCount] = useState(200);
   const [search, setSearch] = useState("");
@@ -208,6 +209,19 @@ export function LedgerTable({
         <span style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", whiteSpace: "nowrap" }}>
           {filtered.length} / {rows.length} rows
         </span>
+        {onPrint && (
+          <button
+            onClick={onPrint}
+            style={{
+              background: "#22c55e", border: "none", borderRadius: 8,
+              color: "#fff", padding: "6px 12px", cursor: "pointer",
+              fontSize: "0.8rem", fontWeight: 900, display: "flex", alignItems: "center", gap: 6,
+              marginLeft: "12px", boxShadow: "0 0 15px rgba(34,197,94,0.3)"
+            }}
+          >
+            🖨️ PRINT PREVIEW
+          </button>
+        )}
       </div>
 
       {/* ── Table ── */}

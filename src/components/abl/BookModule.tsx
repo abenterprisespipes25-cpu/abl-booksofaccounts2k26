@@ -468,7 +468,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         const h1 = c.header1;
         const h2 = c.header2;
         
-        if (h1 && h1 !== "") {
+        if (h1 && h1.trim() !== "") {
           // Check for grouping
           let span = 1;
           let j = i + 1;
@@ -481,8 +481,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           }
           i = j - 1; // skip merged
         } else {
-          // No group, use rowspan
+          // No group (empty or missing h1), use rowspan
           headRow1 += `<th style="${TH}" rowspan="2">${c.header}</th>`;
+          // Add an empty th to headRow2 to keep table structure if needed? 
+          // Actually no, rowspan="2" means it occupies the cell in the next row too.
         }
       }
     } else {
@@ -555,11 +557,25 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     </body></html>`;
 
     const w = window.open("", "_blank");
-    if (w) {
+    if (!w) {
+      toast.error("Popup blocked! Please allow popups to view the print preview.");
+      return;
+    }
+    
+    try {
       w.document.write(html);
       w.document.close();
       w.focus();
-      setTimeout(() => w.print(), 800);
+      // Wait for content to load before printing
+      setTimeout(() => {
+        if (!w.closed) {
+          w.print();
+        }
+      }, 1000);
+    } catch (err) {
+      console.error("Print Error:", err);
+      toast.error("An error occurred while generating the print preview.");
+      w.close();
     }
   }
 
