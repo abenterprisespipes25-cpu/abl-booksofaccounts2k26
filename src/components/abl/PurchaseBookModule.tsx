@@ -126,16 +126,34 @@ export default function PurchaseBookModule() {
   }
 
   const totals = useMemo(() => {
-    const t = { purchases: 0, vat: 0, inputTax: 0, count: 0 };
+    const t = { purchases: 0, itwTop10t: 0, inputTax: 0, count: 0 };
     for (const r of rows) {
       const isParent = !!(r.invoice_no || "").trim() && !!(r.supplier || "").trim();
       if (isParent) t.count++;
       t.inputTax += Number(r.input_tax) || 0;
-      t.vat += Number(r.input_tax) || 0;
+      t.itwTop10t += Number(r.itw_top_10t) || 0;
       t.purchases += (Number(r.ap_trade_cr) || 0);
     }
     return t;
   }, [rows]);
+
+  const sundriesRecap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const acct = String(r.sundries_acct_title || "").trim();
+      const amt = Number(r.sundries_amount) || 0;
+      if (!acct || amt === 0) continue;
+      map.set(acct, (map.get(acct) || 0) + amt);
+    }
+    return Array.from(map.entries())
+      .map(([account, amount]) => ({ account, amount }))
+      .sort((a, b) => a.account.localeCompare(b.account));
+  }, [rows]);
+
+  const sundriesTotal = useMemo(
+    () => sundriesRecap.reduce((s, r) => s + r.amount, 0),
+    [sundriesRecap]
+  );
 
   const yearOptions = useMemo(() => {
     const cur = now.getFullYear();
