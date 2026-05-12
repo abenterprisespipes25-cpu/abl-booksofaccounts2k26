@@ -1,5 +1,9 @@
 ﻿{
+<<<<<<< Updated upstream
     "lastSync":  "2026-05-12T11:51:20Z",
+=======
+    "lastSync":  "2026-05-12T11:58:29Z",
+>>>>>>> Stashed changes
     "status":  "error",
     "message":  "Pull failed, retry 5/5..."
 }
