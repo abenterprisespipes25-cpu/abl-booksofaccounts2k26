@@ -251,6 +251,43 @@ export default function PurchaseBookModule() {
         )}
       </div>
 
+      {/* Recapitulation of Sundry Accounts */}
+      {sundriesRecap.length > 0 && (
+        <div className="bg-[#0a1628] rounded-2xl border border-white/10 overflow-hidden shadow-2xl print-area">
+          <div className="px-6 py-4 border-b border-white/10 bg-white/5">
+            <h3 className="text-sm font-black uppercase tracking-[0.25em] text-white">
+              Recapitulation of Sundry Accounts
+            </h3>
+            <p className="text-xs text-white/40 mt-1">{monthYear}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#0f2744] text-white">
+                <tr>
+                  <th className="px-6 py-3 text-left text-[11px] font-black uppercase tracking-widest">S U N D R I E S</th>
+                  <th className="px-6 py-3 text-right text-[11px] font-black uppercase tracking-widest w-48">Amount</th>
+                  <th className="px-6 py-3 text-right text-[11px] font-black uppercase tracking-widest w-48">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sundriesRecap.map((s, i) => (
+                  <tr key={s.account} className={i % 2 === 0 ? "bg-white/[0.02]" : ""}>
+                    <td className="px-6 py-2.5 text-white/90">{s.account}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-white/90">{fmtMoney(s.amount)}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-white/90">{fmtMoney(s.amount)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-blue-600/20 border-t-2 border-blue-500/40">
+                  <td className="px-6 py-3 text-white font-black uppercase tracking-wider text-xs">Grand Total</td>
+                  <td className="px-6 py-3 text-right font-mono font-black text-white">{fmtMoney(sundriesTotal)}</td>
+                  <td className="px-6 py-3 text-right font-mono font-black text-white">{fmtMoney(sundriesTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Upload summary */}
       <Dialog open={!!summary} onOpenChange={(o) => !o && setSummary(null)}>
         <DialogContent className="bg-[#0f172a] border-white/10 text-white max-w-md">
