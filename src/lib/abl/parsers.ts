@@ -239,6 +239,8 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     let lastNo = "";
     let lastPayee = "";
     let lastParticulars = "";
+    let currentHeader: any = null;
+    const transactions: any[] = [];
 
     for (let i = dataStartIndex; i < rows.length; i++) {
       const row = rows[i];
