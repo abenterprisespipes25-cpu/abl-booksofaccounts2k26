@@ -27,8 +27,9 @@ while ($true) {
             $pullSuccess = $false
             $retryCount = 0
             while (-not $pullSuccess -and $retryCount -lt 5) {
-                git pull origin main --rebase
+                git pull origin main --autostash --no-edit
                 if ($LASTEXITCODE -eq 0) {
+
                     $pullSuccess = $true
                 } else {
                     $retryCount++
