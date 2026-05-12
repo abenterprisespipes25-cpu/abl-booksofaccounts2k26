@@ -113,24 +113,12 @@ export async function exportExcel(opts: {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
   // Column widths
-  ws["!cols"] = columns.map(c => {
-    const isPB = bookName.toUpperCase().includes("PURCHASE");
-    if (isPB) {
-      const h = c.header.toUpperCase();
-      if (h === "DATE") return { wch: 8 };
-      if (h === "SUPPLIER") return { wch: 35 };
-      if (h.includes("INVOICE NO") || h.includes("A/P TRADE") || h.includes("INPUT TAX") || 
-          h.includes("R&M") || h.includes("FUEL") || h.includes("ITW TOP 10T")) return { wch: 12 };
-      if (h.includes("SUNDRIES-ACCT TITLE")) return { wch: 30 };
-      if (h.includes("SUNDRIES AMOUNT")) return { wch: 14.45 };
-    }
-    return { wch: Math.max(c.width || 10, 8) };
-  });
+  ws["!cols"] = columns.map(c => ({ wch: c.width || 10 }));
 
   // Row heights
   ws["!rows"] = aoa.map((_, i) => {
-    if (i < INFO_ROWS) return { hpt: i === 0 ? 20 : 14 };
-    if (i < DATA_START_ROW) return { hpt: 22 };
+    if (i < INFO_ROWS) return { hpt: i === 0 ? 22 : 16 };
+    if (i < DATA_START_ROW) return { hpt: 24 };
     return { hpt: 15 };
   });
 

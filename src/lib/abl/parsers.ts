@@ -234,125 +234,118 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     if (h < 0) continue;
     const dataStartIndex = h + 1;
     
-    let lastIso: string | null = null;
+    // Step 2: Group rows by transaction (Date + No. + Name)
+    const transactionGroups: any[][] = [];
+    let currentGroup: any[] = [];
+    
+    let lastDate: string | null = null;
     let lastNo = "";
     let lastPayee = "";
-    let lastParticulars = "";
-    let currentHeader: any = null;
-    const transactions: any[] = [];
 
     for (let i = dataStartIndex; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.every(cell => String(cell).trim() === '')) continue;
 
-      let iso = toISODate(row[0]);
-      let colC = String(row[2] ?? '').trim();  // No. (Check No)
-      let colD = String(row[3] ?? '').trim();  // Name (Payee)
-      let colE = String(row[4] ?? '').trim();  // Memo/Particulars
-      const colF = String(row[5] ?? '').trim();  // Account
-      const colG = num(row[6]);  // Debit
-      const colH = num(row[7]);  // Credit
+      const iso = toISODate(row[0]);
+      const no = String(row[2] ?? '').trim();
+      const payee = String(row[3] ?? '').trim();
+      const acct = String(row[5] ?? '').trim();
 
-      // If we have an account, but no date/no/payee, auto-fill from previous
-      if (colF !== "") {
-        if (iso) lastIso = iso; else iso = lastIso;
-        if (colC) lastNo = colC; else colC = lastNo;
-        if (colD) lastPayee = colD; else colD = lastPayee;
-        if (colE) lastParticulars = colE; else colE = lastParticulars;
-      }
-
-      const isHeaderRow = iso !== null && (colC !== '' || colD !== '');
-
-      if (isHeaderRow) {
-        if (currentHeader) transactions.push(currentHeader);
-        currentHeader = {
-          date: iso,
-          type: String(row[1] ?? '').trim(),
-          no: colC,
-          payee: colD,
-          particulars: colE, // Column E
-          account: colF, 
-          debit: colG,
-          credit: colH,
-          splitRows: []
-        };
-        if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
-      } else if (colF !== '' && currentHeader !== null) {
-        currentHeader.splitRows.push({
-          account: colF,
-          particulars: colE || currentHeader.particulars,
-          debit: colG,
-          credit: colH
-        });
+      if (acct !== "") {
+        // If we see a new Date+No+Payee, it's a new transaction block
+        const isNewBlock = iso !== null && (no !== '' || payee !== '');
+        
+        if (isNewBlock) {
+          if (currentGroup.length > 0) transactionGroups.push(currentGroup);
+          currentGroup = [row];
+          lastDate = iso;
+          lastNo = no;
+          lastPayee = payee;
+        } else {
+          currentGroup.push(row);
+        }
       }
     }
-    if (currentHeader) transactions.push(currentHeader);
+    if (currentGroup.length > 0) transactionGroups.push(currentGroup);
 
-    // Map transactions to CDB Entries
-    for (const tx of transactions) {
-      const my = monthYearFromISO(tx.date);
-      const fund = mapFund(tx.account);
+    // Step 3-4: Process each transaction
+    for (const txRows of transactionGroups) {
+      const firstRow = txRows[0];
+      const iso = toISODate(firstRow[0]) || lastDate;
+      const no = String(firstRow[2] ?? '').trim();
+      const payee = String(firstRow[3] ?? '').trim();
+      const my = monthYearFromISO(iso);
+      if (!detectedMonthYear) detectedMonthYear = my;
       const folio = folioFor("CDB", my);
 
-      const entryId = crypto.randomUUID();
-      const isCashAccount = CASH_FIELDS_CDB.some(cf => tx.account.includes(cf) || cf.includes(tx.account));
+      // Main row info
+      let cashAmount = 0;
+      let fundAccount = "";
+      let particulars = "";
+
+      // Look for the "Main Row" (the one with the Credit in Col H)
+      for (const r of txRows) {
+        const cr = num(r[7]);
+        if (cr > 0) {
+          cashAmount = cr;
+          fundAccount = String(r[5] ?? '').trim();
+          particulars = String(r[4] ?? '').trim(); // Part 1: Column E
+        }
+      }
       
-      const entry: any = {
+      // Fallback for particulars
+      if (!particulars) particulars = String(firstRow[4] ?? '').trim();
+
+      const entryId = crypto.randomUUID();
+      const baseEntry: any = {
         id: entryId,
-        entry_date: tx.date,
-        payee: tx.payee,
-        particulars: tx.particulars, 
-        petty_cash_voucher: tx.particulars.toUpperCase().includes("PCF") ? tx.particulars.match(/PCF\s*(\S+)/i)?.[1] || tx.particulars : "",
-        check_voucher_no: tx.particulars.toUpperCase().includes("CV") ? tx.particulars.match(/CV\s*(\d+)/i)?.[0] || tx.particulars : "",
-        check_no: tx.no,
-        fund: fund,
-        cash_amount: 0, // Will be calculated
+        entry_date: iso,
+        payee: payee,
+        particulars: particulars,
+        petty_cash_voucher: particulars.toUpperCase().includes("PCF") ? particulars.match(/PCF\s*(\S+)/i)?.[1] || particulars : "",
+        check_voucher_no: particulars.toUpperCase().includes("CV") ? particulars.match(/CV\s*(\d+)/i)?.[0] || particulars : "",
+        check_no: no,
+        fund: mapFund(fundAccount),
+        cash_amount: cashAmount,
         month_year: my
       };
 
-
-      // Initialize all fixed columns to 0
-      CDB_FIXED_FIELDS.forEach(f => entry[f] = 0);
-      entry.vat_input_tax = 0; // Ensure VAT is 0 too
-
-      // 1. First pass: Collect all fixed column totals and all sundry rows
-      const fixedTotals: Record<string, number> = {};
-      CDB_FIXED_FIELDS.forEach(f => fixedTotals[f] = 0);
-      fixedTotals.vat_input_tax = 0;
-
+      // Map categories
+      CDB_FIXED_FIELDS.forEach(f => baseEntry[f] = 0);
+      baseEntry.vat_input_tax = 0;
       const sundries: any[] = [];
 
-      for (const sr of tx.splitRows) {
-        const acct = sr.account.trim();
-        const dr = sr.debit;
-        const cr = sr.credit;
+      for (const r of txRows) {
+        const acct = String(r[5] ?? '').trim();
+        const dr = num(r[6]);
+        const cr = num(r[7]);
 
-        // Post to GL
+        // GL Entry for every split
         glEntries.push({
-          month_year: my, entry_date: tx.date, account_name: acct,
-          particulars: tx.payee, folio: folio, debit: dr, credit: cr,
-          source_module: 'CDB', source_ref: tx.no
+          month_year: my, entry_date: iso!, account_name: acct,
+          particulars: payee, folio: folio, debit: dr, credit: cr,
+          source_module: 'CDB', source_ref: no
         });
 
         let mapped = false;
-        const mapping = CDB_FIXED_MAPPING[acct];
-        if (mapping) {
-          const isCreditField = CREDIT_FIELDS_CDB.has(mapping.field);
-          // Rule: Input VAT on credit side goes to SUNDRIES
-          if (acct === "Input VAT" && cr > 0) {
-            mapped = false;
-          } else {
-            const amt = isCreditField ? cr : dr;
-            fixedTotals[mapping.field] = round2((fixedTotals[mapping.field] || 0) + amt);
-            mapped = true;
-          }
+        
+        // Critical Rule: Input VAT on credit side goes to SUNDRIES
+        if (acct === "Input VAT" && cr > 0) {
+          mapped = false;
         } else {
-          // startswith match
-          for (const [key, val] of Object.entries(CDB_FIXED_MAPPING)) {
-            if (val.match_type === 'startswith' && acct.startsWith(key)) {
-              fixedTotals[val.field] = round2((fixedTotals[val.field] || 0) + dr);
-              mapped = true;
-              break;
+          const mapping = CDB_FIXED_MAPPING[acct];
+          if (mapping) {
+            const isCreditField = CREDIT_FIELDS_CDB.has(mapping.field);
+            const amt = isCreditField ? cr : dr;
+            baseEntry[mapping.field] = round2((baseEntry[mapping.field] || 0) + amt);
+            mapped = true;
+          } else {
+            for (const [key, val] of Object.entries(CDB_FIXED_MAPPING)) {
+              if (val.match_type === 'startswith' && acct.startsWith(key)) {
+                baseEntry[val.field] = round2((baseEntry[val.field] || 0) + dr);
+                mapped = true;
+                break;
+              }
             }
           }
         }
@@ -362,39 +355,13 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         }
       }
 
-      // Also process the main row's account (the Fund/Bank) for GL
-      glEntries.push({
-        month_year: my, entry_date: tx.date, account_name: fundToGLAccount(fund),
-        particulars: tx.payee, folio: folio, debit: tx.debit, credit: tx.credit,
-        source_module: 'CDB', source_ref: tx.no
-      });
-
-      // 2. Second pass: Create the rows
+      // Create final data rows
       if (sundries.length === 0) {
-        // Just one row with everything
-        // Calculate Cash Amount as sum of all categorized debits - categorized credits
-        let totalCash = 0;
-        Object.keys(fixedTotals).forEach(f => {
-          if (CREDIT_FIELDS_CDB.has(f)) totalCash -= fixedTotals[f];
-          else totalCash += fixedTotals[f];
-        });
-        allRows.push({ ...entry, ...fixedTotals, cash_amount: round2(totalCash) });
+        allRows.push(baseEntry);
       } else {
-        // One row per sundry
         sundries.forEach((s, idx) => {
-          let totalCash = 0;
-          if (idx === 0) {
-            Object.keys(fixedTotals).forEach(f => {
-              if (CREDIT_FIELDS_CDB.has(f)) totalCash -= fixedTotals[f];
-              else totalCash += fixedTotals[f];
-            });
-            // Also add the sundry if it's a debit? No, sundries are usually debits in CDB unless they are the bank.
-            // But wait, if we are in this block, the "Cash Amount" is the balancing figure.
-          }
           allRows.push({
-            ...entry,
-            cash_amount: idx === 0 ? round2(totalCash + sundries.reduce((acc, curr) => acc + curr.dr - curr.cr, 0)) : 0,
-            ...(idx === 0 ? fixedTotals : {}),
+            ...baseEntry,
             sundries_acct_title: s.acct_title,
             sundries_dr: s.dr,
             sundries_cr: s.cr,
@@ -405,11 +372,11 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     }
   }
 
-  // Sort by Date then Check No
+  // Final Sort: Date ASC, CV No. ASC
   allRows.sort((a, b) => {
     const d = a.entry_date.localeCompare(b.entry_date);
     if (d !== 0) return d;
-    return naturalSort(a.check_no, b.check_no);
+    return naturalSort(a.check_voucher_no || a.check_no, b.check_voucher_no || b.check_no);
   });
 
   return { rows: allRows, glEntries, monthYear: detectedMonthYear };
