@@ -134,7 +134,7 @@ function buildAccountSheet(data: TAccountData, settings: CompanySettings) {
   const HEADER_ROW = 6;
   const TOTAL_ROW  = wsData.length - 1;
   const BAL_ROW    = (data.balanceDR > 0 || data.balanceCR > 0) ? TOTAL_ROW - 1 : -1;
-  const thin  = (rgb = "CBD5E1") => ({ style:"thin",  color:{ rgb } });
+  const thin  = (rgb = "000000") => ({ style:"thin",  color:{ rgb } });
   const bAll  = { top:thin(), bottom:thin(), left:thin(), right:thin() };
   const bTot  = { ...bAll, top:{ style:"double", color:{ rgb:"000000" } } };
 

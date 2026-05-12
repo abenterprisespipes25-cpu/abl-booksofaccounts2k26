@@ -101,8 +101,58 @@ export default function TrialBalance() {
     aoa.push(["TOTAL", totalDr, totalCr]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = [{ wch: 50 }, { wch: 18 }, { wch: 18 }];
+
+    // Apply Styles
+    const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1:A1");
+    const thin = { style: "thin", color: { rgb: "000000" } };
+    const bAll = { top: thin, bottom: thin, left: thin, right: thin };
+    const bTot = { ...bAll, top: { style: "double", color: { rgb: "000000" } } };
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: "z", v: "" };
+
+        const isTitle = R < 6;
+        const isHead  = R === 6;
+        const isTotal = R === aoa.length - 1;
+        const isData  = R > 6 && R < aoa.length - 1;
+
+        if (isTitle) {
+          ws[addr].s = { font: { bold: true, sz: R === 0 ? 12 : 10 }, alignment: { horizontal: "center" } };
+        } else if (isHead) {
+          ws[addr].s = {
+            font: { bold: true, color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "0F2744" }, patternType: "solid" },
+            border: bAll,
+            alignment: { horizontal: "center" }
+          };
+        } else if (isData) {
+          ws[addr].s = {
+            border: bAll,
+            alignment: { horizontal: C === 0 ? "left" : "right" },
+            numFmt: C > 0 ? "#,##0.00" : undefined
+          };
+        } else if (isTotal) {
+          ws[addr].s = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: "DBEAFE" }, patternType: "solid" },
+            border: bTot,
+            alignment: { horizontal: C === 0 ? "left" : "right" },
+            numFmt: C > 0 ? "#,##0.00" : undefined
+          };
+        }
+      }
+    }
+
+    // Merge titles
+    for (let i = 0; i < 5; i++) {
+      ws["!merges"] = ws["!merges"] || [];
+      ws["!merges"].push({ s: { r: i, c: 0 }, e: { r: i, c: 2 } });
+    }
+
     XLSX.utils.book_append_sheet(wb, ws, "Trial Balance");
-    XLSX.writeFile(wb, `ABL_TRIAL_BALANCE_${dateSuffix}.xlsx`);
+    XLSX.writeFile(wb, `ABL_TRIAL_BALANCE_${dateSuffix}.xlsx`, { cellStyles: true });
   }
 
   async function exportPDF() {

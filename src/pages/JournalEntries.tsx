@@ -198,9 +198,60 @@ export default function JournalEntries() {
     aoa.push([]);
     aoa.push(["", "", "", "", "TOTAL", round2(gDr), round2(gCr), ""]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 36 }, { wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
+    ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 22 }, { wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
+    
+    // Apply Styles
+    const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1:A1");
+    const thin = { style: "thin", color: { rgb: "000000" } };
+    const bAll = { top: thin, bottom: thin, left: thin, right: thin };
+    const bTot = { ...bAll, top: { style: "double", color: { rgb: "000000" } } };
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: "z", v: "" };
+
+        const isTitle = R < 3;
+        const isHead  = R === 3;
+        const isTotal = R === aoa.length - 1;
+        const isData  = R > 3 && R < aoa.length - 1;
+
+        if (isTitle) {
+          ws[addr].s = { font: { bold: true, sz: R === 0 ? 12 : 10 }, alignment: { horizontal: "center" } };
+        } else if (isHead) {
+          ws[addr].s = {
+            font: { bold: true, color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "0F2744" }, patternType: "solid" },
+            border: bAll,
+            alignment: { horizontal: "center" }
+          };
+        } else if (isData) {
+          ws[addr].s = {
+            border: bAll,
+            alignment: { horizontal: (C >= 5 && C <= 6) ? "right" : "left" },
+            numFmt: (C >= 5 && C <= 6) ? "#,##0.00" : undefined
+          };
+        } else if (isTotal) {
+          ws[addr].s = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: "DBEAFE" }, patternType: "solid" },
+            border: bTot,
+            alignment: { horizontal: (C >= 5 && C <= 6) ? "right" : "left" },
+            numFmt: (C >= 5 && C <= 6) ? "#,##0.00" : undefined
+          };
+        }
+      }
+    }
+
+    // Merge titles
+    ws["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 7 } },
+    ];
+
     XLSX.utils.book_append_sheet(wb, ws, "Journal");
-    XLSX.writeFile(wb, `ABL_JOURNAL_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `ABL_JOURNAL_${new Date().toISOString().slice(0, 10)}.xlsx`, { cellStyles: true });
   }
 
   async function exportPDF() {
