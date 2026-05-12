@@ -142,11 +142,17 @@ export async function exportExcel(opts: {
     recapSundries.forEach(s => recapAoa.push([s.account, s.dr || "", s.cr || ""]));
     const recapWs = XLSX.utils.aoa_to_sheet(recapAoa);
     recapWs["!cols"] = [{ wch: 40 }, { wch: 15 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(wb, recapWs, "Recap - Sundries");
+    XLSX.utils.book_append_sheet(wb, recapWs, "Recap - Sundries (CDB)");
   }
 
-  // Add Fund Recap if provided
+  // Add PB Sundries Recap if provided
+  // Note: For PB, we use recapSundries as well but it only has 'account' and 'amount'
+  // I'll check if it's the PB module by looking at the column headers or passing a separate prop.
+  // Actually, I'll just check if recapSundries has 'dr'/'cr' vs 'amount'.
+  // But wait, it's better to just support both in a generic way.
+  
   if (recapFunds && recapFunds.length > 0) {
+
     const recapAoa: any[][] = [
       [],
       ["RECAPITULATION OF BANK ACCOUNTS"],
@@ -316,19 +322,24 @@ export async function exportPDF(opts: {
     });
   }
 
-  // Add Fund Recap to PDF
-  if (recapFunds && recapFunds.length > 0) {
+  // Add Sundries Recap to PDF
+  if (recapSundries && recapSundries.length > 0) {
     if (y > doc.internal.pageSize.getHeight() - 150) doc.addPage();
     else y += 30;
 
+    const isPB = bookName.toUpperCase().includes("PURCHASE");
+    
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text("RECAPITULATION OF BANK ACCOUNTS", 30, y);
+    doc.text("RECAPITULATION OF SUNDRY ACCOUNTS", 30, y);
     y += 12;
 
-    const recapHead = [["F U N D", "AMOUNT"]];
-    const recapBody = recapFunds.map(f => [f.fund, fmtMoney(f.amount)]);
-    recapBody.push(["TOTAL", fmtMoney(recapFunds.reduce((acc, f) => acc + f.amount, 0))]);
+    const recapHead = isPB ? [["S U N D R I E S", "AMOUNT", "TOTAL"]] : [["S U N D R I E S", "DEBIT", "CREDIT"]];
+    const recapBody = recapSundries.map(s => isPB ? [s.account, fmtMoney((s as any).amount), fmtMoney((s as any).amount)] : [s.account, s.dr ? fmtMoney(s.dr) : "", s.cr ? fmtMoney(s.cr) : ""]);
+    
+    const grandTotal = recapSundries.reduce((acc, s) => acc + ((s as any).amount || s.dr || 0), 0);
+    const crTotal = recapSundries.reduce((acc, s) => acc + ((s as any).amount || s.cr || 0), 0);
+    recapBody.push(isPB ? ["GRAND TOTAL", fmtMoney(grandTotal), fmtMoney(grandTotal)] : ["TOTAL", fmtMoney(grandTotal), fmtMoney(crTotal)]);
 
     autoTable(doc, {
       head: recapHead,
@@ -337,7 +348,7 @@ export async function exportPDF(opts: {
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [15, 39, 68], textColor: 255 },
-      columnStyles: { 0: { cellWidth: 250 }, 1: { halign: "right", cellWidth: 80 } },
+      columnStyles: { 0: { cellWidth: 250 }, 1: { halign: "right", cellWidth: 80 }, 2: { halign: "right", cellWidth: 80 } },
       margin: { left: 30 },
       didParseCell: (data) => {
         if (data.row.index === recapBody.length - 1) {
