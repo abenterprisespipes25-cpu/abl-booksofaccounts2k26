@@ -641,7 +641,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
             <FileText className="h-4 w-4 mr-2" /> Export PDF
           </Button>
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={handlePrint}>
-            <Printer className="h-4 w-4 mr-2" /> Print
+            <Printer className="h-4 w-4 mr-2" /> Print Preview
           </Button>
 
 

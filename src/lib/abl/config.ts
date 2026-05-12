@@ -72,7 +72,7 @@ export function fundToGLAccount(fund: string): string {
 }
 
 export const CDB_COLUMNS: ColumnDef[] = [
-  { header: "DATE", header1: "DATE", header2: "", field: "entry_date", type: "date", width: 8 },
+  { header: "DATE", header1: "", header2: "DATE", field: "entry_date", type: "date", width: 8 },
   { header: "PAYEE", header1: "", header2: "PAYEE", field: "payee", type: "text", width: 25 },
   { header: "PARTICULARS", header1: "", header2: "PARTICULARS", field: "particulars", type: "text", width: 30 },
   { header: "PETTY CASH VOUCHER", header1: "PETTY CASH", header2: "VOUCHER NO.", field: "petty_cash_voucher", type: "text", width: 10 },
@@ -107,7 +107,7 @@ export const CDB_COLUMNS: ColumnDef[] = [
 
 
 export const PB_COLUMNS: ColumnDef[] = [
-  { header: "DATE", header1: "DATE", header2: "", field: "entry_date", type: "date", width: 8 },
+  { header: "DATE", header1: "", header2: "DATE", field: "entry_date", type: "date", width: 8 },
   { header: "SUPPLIER", header1: "", header2: "SUPPLIER", field: "supplier", type: "text", width: 35 },
   { header: "INVOICE NO.", header1: "", header2: "INVOICE NO.", field: "invoice_no", type: "text", width: 12 },
   { header: "A/P TRADE-CR", header1: "A/P - Trade", header2: "Cr.", field: "ap_trade_cr", type: "currency", width: 12, creditCol: true },
