@@ -153,7 +153,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
   }, [rows, moduleId]);
 
+  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
+
   const [uploadInfo, setUploadInfo] = useState<{ file_name: string; created_at: string } | null>(null);
+
 
   useEffect(() => {
     async function getStatus() {
@@ -391,12 +394,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" onClick={() => active && loadRows(active)}>
             <Save className="h-4 w-4 mr-2" /> Save
           </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries, recapFunds })}>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}>
             <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
           </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries, recapFunds })}>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}>
             <FileText className="h-4 w-4 mr-2" /> Export PDF
           </Button>
+
 
 
         </div>
