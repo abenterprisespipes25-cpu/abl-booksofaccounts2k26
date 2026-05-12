@@ -451,6 +451,91 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     }
   }
 
+  const handlePrint = async () => {
+    const settings = await getCompanySettings();
+    const BD = "border:1px solid #000;padding:2px 4px;font-size:6.5pt;white-space:nowrap";
+    const TH = "background:#0f2744;color:#fff;font-weight:700;padding:4px 6px;font-size:7pt;border:1px solid #000;white-space:nowrap;text-align:center";
+    
+    // Check if we have double headers
+    const hasH2 = meta.columns.some(c => c.header2);
+    
+    let headHtml = "<tr>";
+    if (hasH2) {
+      // Row 1
+      meta.columns.forEach((c, i) => {
+        const h1 = c.header1 ?? c.header;
+        // Basic grouping logic for h1 merges
+        let span = 1;
+        let skip = false;
+        if (i > 0 && (meta.columns[i-1].header1 ?? meta.columns[i-1].header) === h1) skip = true;
+        if (!skip) {
+           let j = i + 1;
+           while (j < meta.columns.length && (meta.columns[j].header1 ?? meta.columns[j].header) === h1) { span++; j++; }
+           headHtml += `<th style="${TH}" colspan="${span}">${h1}</th>`;
+        }
+      });
+      headHtml += "</tr><tr>";
+      // Row 2
+      meta.columns.forEach(c => {
+        headHtml += `<th style="${TH}">${c.header2 ?? ""}</th>`;
+      });
+    } else {
+      meta.columns.forEach(c => {
+        headHtml += `<th style="${TH}">${c.header}</th>`;
+      });
+    }
+    headHtml += "</tr>";
+
+    let rowHtml = "";
+    rows.forEach(r => {
+      rowHtml += "<tr>";
+      meta.columns.forEach(c => {
+        const val = r[c.field];
+        const display = c.type === "currency" ? (Number(val) ? fmtMoney(Number(val)) : "—") : (c.type === "date" ? fmtDate(val) : (val ?? ""));
+        const align = c.type === "currency" ? "right" : "left";
+        rowHtml += `<td style="${BD};text-align:${align}">${display}</td>`;
+      });
+      rowHtml += "</tr>";
+    });
+
+    // Totals
+    rowHtml += `<tr style="background:#dbeafe;font-weight:700">`;
+    meta.columns.forEach((c, i) => {
+      if (c.type === "currency") {
+        const sum = rows.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
+        rowHtml += `<td style="${BD};text-align:right">${fmtMoney(sum)}</td>`;
+      } else {
+        rowHtml += `<td style="${BD}">${i === 0 ? "TOTAL" : ""}</td>`;
+      }
+    });
+    rowHtml += "</tr>";
+
+    const html = `<!DOCTYPE html><html><head><style>
+      *{font-family:Arial,sans-serif;box-sizing:border-box;margin:0;padding:0}
+      body{padding:10mm 12mm} table{width:100%;border-collapse:collapse}
+      @media print {
+        @page { size: legal landscape; margin: 10mm; }
+        .no-print { display: none; }
+      }
+    </style></head><body>
+      <div style="text-align:center;margin-bottom:15px">
+        <div style="font-size:14pt;font-weight:900">${settings.company_name || "JHAYMARTS INDUSTRIES, INC."}</div>
+        <div style="font-size:9pt;color:#666">${settings.address || ""}</div>
+        <div style="font-size:11pt;font-weight:900;margin-top:5px;text-decoration:underline">${bookName}</div>
+        <div style="font-size:10pt;margin-top:2px">FOR THE MONTH OF ${active || "N/A"}</div>
+      </div>
+      <table><thead>${headHtml}</thead><tbody>${rowHtml}</tbody></table>
+    </body></html>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      setTimeout(() => w.print(), 800);
+    }
+  }
+
   const bookName = meta.label.toUpperCase();
   const filenameBase = `ABL_${meta.glSource}_${active ?? "EMPTY"}`.replace(/\s+/g, "_");
 
@@ -512,6 +597,9 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}>
             <FileText className="h-4 w-4 mr-2" /> Export PDF
           </Button>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-2" /> Print
+          </Button>
 
 
 
@@ -563,6 +651,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
              monthYear={active || undefined} 
              onSave={handleSave}
              onDelete={handleDelete}
+             onPrint={handlePrint}
            />
            {syncing && rows.length > 0 && (
              <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] pointer-events-none" />

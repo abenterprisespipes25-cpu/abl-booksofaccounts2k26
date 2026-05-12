@@ -216,9 +216,9 @@ export async function exportExcel(opts: {
     fitToPage: true,
     fitToWidth: 1,
     fitToHeight: 0,
-    paperSize: 9, // A4
+    paperSize: 5, // Legal
   };
-  ws["!printOptions"] = { gridLines: false }; // We have our own borders
+  ws["!printOptions"] = { gridLines: true };
   ws["!margins"] = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
 
   // ── Workbook ──
