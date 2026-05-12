@@ -511,12 +511,28 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     });
     rowHtml += "</tr>";
 
+    const isPortrait = moduleId === "sales_book" || moduleId === "cash_receipts";
+    const pageSize = isPortrait ? "letter portrait" : "legal landscape";
+
     const html = `<!DOCTYPE html><html><head><style>
       *{font-family:Arial,sans-serif;box-sizing:border-box;margin:0;padding:0}
-      body{padding:10mm 12mm} table{width:100%;border-collapse:collapse}
+      body{padding:10mm 12mm; padding-bottom: 20mm;} 
+      table{width:100%;border-collapse:collapse}
       @media print {
-        @page { size: legal landscape; margin: 10mm; }
+        @page { size: ${pageSize}; margin: 10mm; }
         .no-print { display: none; }
+        .page-footer {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          text-align: right;
+          font-size: 8pt;
+          color: #666;
+        }
+        .page-footer:after {
+          content: "Page " counter(page);
+        }
       }
     </style></head><body>
       <div style="text-align:center;margin-bottom:15px">
@@ -526,6 +542,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         <div style="font-size:10pt;margin-top:2px">FOR THE MONTH OF ${active || "N/A"}</div>
       </div>
       <table><thead>${headHtml}</thead><tbody>${rowHtml}</tbody></table>
+      <div class="page-footer"></div>
     </body></html>`;
 
     const w = window.open("", "_blank");

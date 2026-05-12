@@ -211,12 +211,13 @@ export async function exportExcel(opts: {
   ];
 
   // ── Print settings ──
+  const isPortraitBook = bookName.toUpperCase().includes("SALES") || bookName.toUpperCase().includes("CASH RECEIPTS");
   ws["!pageSetup"] = {
-    orientation: "landscape",
+    orientation: isPortraitBook ? "portrait" : "landscape",
     fitToPage: true,
     fitToWidth: 1,
     fitToHeight: 0,
-    paperSize: 5, // Legal
+    paperSize: isPortraitBook ? 1 : 5, // 1=Letter (Coupon Bond), 5=Legal
   };
   ws["!printOptions"] = { gridLines: true };
   ws["!margins"] = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
