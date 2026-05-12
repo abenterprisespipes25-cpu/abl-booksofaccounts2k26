@@ -80,7 +80,8 @@ export default function Dashboard() {
               Financial Operations Dashboard
             </h2>
             <p className="text-sm md:text-base text-on-surface-variant max-w-lg leading-relaxed opacity-80">
-              Real-time intelligence and automated ledger reconciliation for JHAYMARTS INDUSTRIES. Monitor liquidity flow and transaction velocity across all financial modules.
+              This system was developed to help simplify and automate the preparation of Looseleaf Books of Accounts. It streamlines accounting processes such as Cash Receipts, Cash Disbursements, General Ledger, Sales Book, Purchase Book, and financial reporting to improve accuracy, efficiency, and compliance.
+              <span className="block mt-2 text-white/40 text-xs">Developed by: Adrian Llano</span>
             </p>
           </div>
         </div>
