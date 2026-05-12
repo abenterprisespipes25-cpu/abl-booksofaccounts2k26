@@ -255,6 +255,76 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   useEffect(() => { loadMonths(true); }, [loadMonths]);
   useEffect(() => { if (active) loadRows(active); }, [active, loadRows]);
 
+  const handleSave = async (updatedRow: any) => {
+    try {
+      const { id, _is_sub_row, ...cleanRow } = updatedRow;
+      const actualId = _is_sub_row ? id.split("-sundry-")[0] : id;
+
+      // Filter out non-database fields (like _is_sub_row, sundries_acct_title, etc if they aren't in the main table)
+      const dbFields = meta.columns.map(c => c.field);
+      const dataToUpdate: any = { id: actualId };
+      dbFields.forEach(f => {
+        if (updatedRow[f] !== undefined) dataToUpdate[f] = updatedRow[f];
+      });
+
+      const { error } = await supabase
+        .from(meta.tableName)
+        .update(dataToUpdate)
+        .eq("id", actualId);
+
+      if (error) throw error;
+      
+      // Sync with GL
+      // We'll delete and re-insert the GL entry for this specific row
+      // We need a way to identify the GL entry. Usually source_module + month_year + particulars/date?
+      // Better: we should have a source_ref in gl_entries. 
+      // Let's check if gl_entries has a reference to the book entry id.
+      // Looking at commit() logic, it seems it doesn't store the source id.
+      // However, we can try to find it by date, particulars, and amount.
+      
+      // Actually, a better way is to update the GL entry if it matches.
+      // But since we don't have a direct ID link yet in the existing schema's GL insertion,
+      // we'll skip the automated sync for now to avoid accidental deletions of other rows,
+      // OR we add a source_id column to gl_entries.
+      
+      // For now, let's just update the book entry as requested. 
+      // If the user wants full sync, we'd need a schema change for gl_entries to include source_id.
+      
+      toast.success("Record updated successfully");
+      invalidateCache(moduleId, active!);
+      loadRows(active!, true);
+    } catch (e: any) {
+      toast.error(`Failed to save: ${e.message || e}`);
+      throw e;
+    }
+  };
+
+  const handleDelete = async (rowToDelete: any) => {
+    try {
+      const { id, _is_sub_row } = rowToDelete;
+      const actualId = _is_sub_row ? id.split("-sundry-")[0] : id;
+
+      const { error } = await supabase
+        .from(meta.tableName)
+        .delete()
+        .eq("id", actualId);
+
+      if (error) throw error;
+      
+      // Cleanup associated sundries for PB
+      if (moduleId === "purchase_book") {
+        await supabase.from("pb_sundries").delete().eq("pb_entry_id", actualId);
+      }
+
+      toast.success("Record deleted");
+      invalidateCache(moduleId, active!);
+      loadRows(active!, true);
+    } catch (e: any) {
+      toast.error(`Failed to delete: ${e.message || e}`);
+      throw e;
+    }
+  };
+
   async function handleFile(file: File) {
     if (moduleId === "purchase_book" && !file.name.toLowerCase().includes("purchase+book")) {
       toast.error("Invalid file. Please upload 'Purchase Book' file only.");
@@ -486,7 +556,14 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         </div>
       ) : (
         <div className="bg-[#0a1628] rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative">
-           <LedgerTable columns={meta.columns} rows={rows} bookName={bookName} monthYear={active || undefined} />
+           <LedgerTable 
+             columns={meta.columns} 
+             rows={rows} 
+             bookName={bookName} 
+             monthYear={active || undefined} 
+             onSave={handleSave}
+             onDelete={handleDelete}
+           />
            {syncing && rows.length > 0 && (
              <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] pointer-events-none" />
            )}

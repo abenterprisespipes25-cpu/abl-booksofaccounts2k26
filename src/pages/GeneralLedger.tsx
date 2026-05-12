@@ -3,10 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCompanySettings, CompanySettings } from "@/lib/abl/companySettings";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, FileSpreadsheet, Printer } from "lucide-react";
+import { Search, Loader2, FileSpreadsheet, Printer, Pencil } from "lucide-react";
 import * as XLSX from "xlsx";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { toast } from "sonner";
+import { LedgerTable } from "@/components/abl/LedgerTable";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 
 interface GLEntry {
   account_name: string;
@@ -239,18 +243,29 @@ function printAccount(data: TAccountData, settings: CompanySettings) {
   if (w) { w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>w.print(), 600); }
 }
 
+const GL_COLUMNS: any[] = [
+  { header: "DATE", field: "entry_date", type: "date", width: 100 },
+  { header: "MONTH/YEAR", field: "month_year", type: "text", width: 100 },
+  { header: "SOURCE", field: "source_module", type: "text", width: 80 },
+  { header: "FOLIO", field: "folio", type: "text", width: 100 },
+  { header: "PARTICULARS", field: "particulars", type: "text", width: 200 },
+  { header: "DEBIT", field: "debit", type: "currency", width: 100 },
+  { header: "CREDIT", field: "credit", type: "currency", width: 100 },
+];
+
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export default function GeneralLedger() {
   const [dataMap, setDataMap] = useState<Map<string, GLEntry[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState("");
   const [settings, setSettings] = useState<CompanySettings | null>(null);
+  const [editingAccount, setEditingAccount] = useState<{ name: string; entries: GLEntry[] } | null>(null);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     const [{ data }, s] = await Promise.all([
       supabase.from("gl_entries")
-        .select("account_name,entry_date,month_year,source_module,folio,particulars,debit,credit")
+        .select("id,account_name,entry_date,month_year,source_module,folio,particulars,debit,credit")
         .order("entry_date", { ascending: true })
         .limit(50000),
       getCompanySettings(),
@@ -265,7 +280,28 @@ export default function GeneralLedger() {
     setDataMap(map);
     setSettings(s);
     setLoading(false);
-  }, []);
+    
+    // Update editing entries if currently open
+    if (editingAccount) {
+      const newEntries = map.get(editingAccount.name) || [];
+      setEditingAccount({ name: editingAccount.name, entries: newEntries });
+    }
+  }, [editingAccount]);
+
+  const handleSaveEntry = async (row: any) => {
+    const { id, ...data } = row;
+    const { error } = await supabase.from("gl_entries").update(data).eq("id", id);
+    if (error) { toast.error("Failed to save entry"); throw error; }
+    toast.success("Entry updated");
+    fetchData(true);
+  };
+
+  const handleDeleteEntry = async (row: any) => {
+    const { error } = await supabase.from("gl_entries").delete().eq("id", row.id);
+    if (error) { toast.error("Failed to delete entry"); throw error; }
+    toast.success("Entry deleted");
+    fetchData(true);
+  };
 
   useEffect(() => {
     fetchData();
@@ -330,16 +366,49 @@ export default function GeneralLedger() {
       ) : (
         <div className="space-y-8">
           {filtered.map(acct => (
-            <TAccountCard key={acct.accountName} data={acct} settings={settings!} />
+            <TAccountCard 
+              key={acct.accountName} 
+              data={acct} 
+              settings={settings!} 
+              onEditEntries={() => setEditingAccount({ name: acct.accountName, entries: dataMap.get(acct.accountName) || [] })}
+            />
           ))}
         </div>
       )}
+
+      {/* Entry Management Dialog */}
+      <Dialog open={!!editingAccount} onOpenChange={(o) => !o && setEditingAccount(null)}>
+        <DialogContent className="max-w-[95vw] w-[1200px] h-[90vh] flex flex-col bg-[#0a1628] border-white/10 text-white p-0 overflow-hidden">
+          <DialogHeader className="p-6 border-b border-white/10 flex-shrink-0">
+            <DialogTitle className="text-xl font-black flex items-center justify-between">
+              <span>MANAGE ENTRIES: {editingAccount?.name.toUpperCase()}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto p-6">
+            {editingAccount && (
+              <LedgerTable 
+                columns={GL_COLUMNS}
+                rows={editingAccount.entries}
+                onSave={handleSaveEntry}
+                onDelete={handleDeleteEntry}
+                bookName={`LEDGER ENTRIES: ${editingAccount.name}`}
+                monthYear="ALL PERIODS"
+              />
+            )}
+          </div>
+          <DialogFooter className="p-4 border-t border-white/10 flex-shrink-0">
+            <Button variant="outline" onClick={() => setEditingAccount(null)} className="bg-white/5 border-white/10 text-white hover:bg-white/10">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // ── T-ACCOUNT CARD ─────────────────────────────────────────────────────────────
-function TAccountCard({ data, settings }: { data: TAccountData; settings: CompanySettings }) {
+function TAccountCard({ data, settings, onEditEntries }: { data: TAccountData; settings: CompanySettings; onEditEntries?: () => void }) {
   const maxRows = Math.max(data.debitRows.length, data.creditRows.length);
 
   // Inline styles that look exactly like Excel
@@ -361,6 +430,9 @@ function TAccountCard({ data, settings }: { data: TAccountData; settings: Compan
 
       {/* Toolbar */}
       <div style={S.toolbar} className="no-print">
+        <button style={S.btn} onClick={onEditEntries}>
+          <Pencil size={12} /> Edit Entries
+        </button>
         <button style={S.btn} onClick={() => exportSingleAccount(data, settings)}>
           <FileSpreadsheet size={12} /> Export Excel
         </button>
