@@ -512,18 +512,9 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
         const dr = sr.debit;
         const cr = sr.credit;
 
-        // Post individual GL lines
-        glEntries.push({
-          month_year: my,
-          entry_date: tx.date,
-          account_name: acct,
-          particulars: tx.supplier,
-          folio: folio,
-          debit: dr,
-          credit: cr,
-          source_module: 'PB',
-          source_ref: tx.no
-        });
+        // Skip individual GL lines for PB to satisfy "credit ra" requirement
+        // Expense distributions will not be posted to GL from the Purchase Book module
+
 
         if (acct.toLowerCase() === "accounts payable") {
           fixedTotals.ap_trade_cr = round2((fixedTotals.ap_trade_cr || 0) + cr);
@@ -589,20 +580,20 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
       }
 
       // 3. Post the header row's account to GL (Accountant verified: Credit Liability)
-      // Use the calculated apSum to ensure the GL balances with the distributions
-      if (tx.account) {
-        glEntries.push({
-          month_year: my,
-          entry_date: tx.date,
-          account_name: tx.account,
-          particulars: tx.supplier,
-          folio: folio,
-          debit: 0,
-          credit: apSum,
-          source_module: 'PB',
-          source_ref: tx.no
-        });
-      }
+      // User requested "credit ra" (Credit only) for the Purchase Book GL posting.
+      // We only post the consolidated Accounts Payable credit.
+      glEntries.push({
+        month_year: my,
+        entry_date: tx.date,
+        account_name: "Accounts Payable",
+        particulars: tx.supplier,
+        folio: folio,
+        debit: 0,
+        credit: apSum,
+        source_module: 'PB',
+        source_ref: tx.no
+      });
+
 
     }
   }
