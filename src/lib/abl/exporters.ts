@@ -29,8 +29,10 @@ export async function exportExcel(opts: {
   monthYear: string;
   columns: ColumnDef[];
   rows: any[];
+  recapSundries?: { account: string; dr: number; cr: number }[];
 }) {
-  const { filename, bookName, monthYear, columns, rows } = opts;
+  const { filename, bookName, monthYear, columns, rows, recapSundries } = opts;
+
   const settings = await getCompanySettings();
   
   // Header Rows (1-4 as per spec, but we have 6 lines of info if we include company name, title, etc)
@@ -127,8 +129,23 @@ export async function exportExcel(opts: {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+
+  // Add Recap if provided
+  if (recapSundries && recapSundries.length > 0) {
+    const recapAoa: any[][] = [
+      [],
+      ["RECAPITULATION OF SUNDRY ACCOUNTS"],
+      ["S U N D R I E S", "Debit", "Credit"],
+    ];
+    recapSundries.forEach(s => recapAoa.push([s.account, s.dr || "", s.cr || ""]));
+    const recapWs = XLSX.utils.aoa_to_sheet(recapAoa);
+    recapWs["!cols"] = [{ wch: 40 }, { wch: 15 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, recapWs, "Recap");
+  }
+
   XLSX.writeFile(wb, filename);
 }
+
 
 export async function exportPDF(opts: {
   filename: string;
@@ -137,8 +154,10 @@ export async function exportPDF(opts: {
   columns: ColumnDef[];
   rows: any[];
   orientation?: "landscape" | "portrait";
+  recapSundries?: { account: string; dr: number; cr: number }[];
 }) {
-  const { filename, bookName, monthYear, columns, rows, orientation = "landscape" } = opts;
+  const { filename, bookName, monthYear, columns, rows, orientation = "landscape", recapSundries } = opts;
+
   const settings = await getCompanySettings();
   const doc = new jsPDF({ orientation, unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -162,52 +181,123 @@ export async function exportPDF(opts: {
   doc.setFontSize(9);
   doc.text(lines[lines.length - 1], pageWidth / 2, y, { align: "center" }); y += 8;
 
-  const head = [columns.map((c) => c.header)];
-  const body = rows.map((r) =>
-    columns.map((c) =>
-      c.type === "currency" ? fmtMoney(r[c.field]) : c.type === "date" ? fmtDate(r[c.field]) : String(r[c.field] ?? "")
-    )
-  );
-  // totals row
-  const totals = columns.map((c, i) => {
-    if (c.type === "currency") {
-      return fmtMoney(rows.reduce((s, r) => s + (Number(r[c.field]) || 0), 0));
-    }
-    return i === 0 ? "TOTAL" : "";
-  });
-  body.push(totals);
+  const isCDB = bookName.toUpperCase().includes("CASH DISBURSEMENTS");
+  const splitIndex = isCDB ? columns.findIndex(c => c.header2?.includes("TOP 10K")) : -1;
 
-  const columnStyles: Record<number, any> = {};
-  columns.forEach((c, i) => {
-    columnStyles[i] = {
-      halign: c.type === "currency" ? "right" : "left",
-      cellWidth: Math.max(35, (c.width || 95) * 0.7),
-    };
-  });
-
-  autoTable(doc, {
-    head, body,
-    startY: y + 6,
-    theme: "grid",
-    styles: { fontSize: 6.5, cellPadding: 2, overflow: "ellipsize" },
-    headStyles: { fillColor: [15, 39, 68], textColor: 255, fontStyle: "bold", fontSize: 7 },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles,
-    didParseCell: (data) => {
-      if (data.row.index === body.length - 1 && data.section === "body") {
-        data.cell.styles.fillColor = [219, 234, 254];
-        data.cell.styles.fontStyle = "bold";
-        data.cell.styles.textColor = [30, 58, 95];
+  const renderTable = (cols: ColumnDef[], startY: number, title?: string) => {
+    const head = [cols.map((c) => c.header2 || c.header)];
+    const body = rows.map((r) =>
+      cols.map((c) =>
+        c.type === "currency" ? (r[c.field] ? fmtMoney(r[c.field]) : "") : c.type === "date" ? fmtDate(r[c.field]) : String(r[c.field] ?? "")
+      )
+    );
+    // totals row
+    const totals = cols.map((c, i) => {
+      if (c.type === "currency") {
+        const sum = rows.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
+        return sum !== 0 ? fmtMoney(sum) : "";
       }
-    },
-    didDrawPage: () => {
-      const pageCount = (doc as any).internal.getNumberOfPages();
-      const current = (doc as any).internal.getCurrentPageInfo().pageNumber;
-      const h = doc.internal.pageSize.getHeight();
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Page ${current} of ${pageCount} — ABL v2.1`, pageWidth / 2, h - 15, { align: "center" });
-    },
-  });
+      return i === 0 ? "TOTAL" : "";
+    });
+    body.push(totals);
+
+    const columnStyles: Record<number, any> = {};
+    cols.forEach((c, i) => {
+      columnStyles[i] = {
+        halign: c.type === "currency" ? "right" : "left",
+        cellWidth: isCDB ? (c.width ? c.width * 6.5 : 40) : 'auto',
+      };
+    });
+
+    if (title) {
+       doc.setFontSize(8);
+       doc.setFont("helvetica", "bold");
+       doc.text(title, 30, startY - 4);
+    }
+
+    autoTable(doc, {
+      head, body,
+      startY: startY,
+      theme: "grid",
+      styles: { fontSize: 5, cellPadding: 1.2, overflow: "ellipsize" },
+      headStyles: { fillColor: [15, 39, 68], textColor: 255, fontStyle: "bold", fontSize: 5.5 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles,
+      margin: { left: 30, right: 30 },
+      didParseCell: (data) => {
+        if (data.row.index === body.length - 1 && data.section === "body") {
+          data.cell.styles.fillColor = [219, 234, 254];
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.textColor = [30, 58, 95];
+        }
+      },
+      didDrawPage: (data) => {
+        const pageCount = doc.internal.getNumberOfPages();
+        const current = doc.internal.getCurrentPageInfo().pageNumber;
+        const h = doc.internal.pageSize.getHeight();
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Page ${current} of ${pageCount}`, pageWidth / 2, h - 15, { align: "center" });
+      },
+    });
+    return (doc as any).lastAutoTable.finalY;
+  };
+
+  if (isCDB && splitIndex > 0) {
+    // PART 1
+    const cols1 = columns.slice(0, splitIndex + 1);
+    let lastY = renderTable(cols1, y + 10, "Part 1: Primary Accounts (up to ITW Top 10K)");
+    
+    doc.addPage();
+    // Repeat Header on new page
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+    doc.text(lines[0], pageWidth / 2, 30, { align: "center" });
+    doc.setFontSize(8); doc.text(`${bookName} - ${monthYear} (Part 2)`, pageWidth / 2, 45, { align: "center" });
+
+    // PART 2: Include Date, Payee, and Check No as reference columns
+    const refCols = columns.slice(0, 3);
+    const cols2 = [...refCols, ...columns.slice(splitIndex + 1)];
+    lastY = renderTable(cols2, 60, "Part 2: Expenses & Sundries");
+    y = lastY;
+  } else {
+    y = renderTable(columns, y + 10);
+  }
+
+  // Add Recap to PDF
+  if (recapSundries && recapSundries.length > 0) {
+    if (y > doc.internal.pageSize.getHeight() - 150) doc.addPage();
+    else y += 30;
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("RECAPITULATION OF SUNDRY ACCOUNTS", 30, y);
+    y += 12;
+
+    const recapHead = [["S U N D R I E S", "DEBIT", "CREDIT"]];
+    const recapBody = recapSundries.map(s => [s.account, s.dr ? fmtMoney(s.dr) : "", s.cr ? fmtMoney(s.cr) : ""]);
+    recapBody.push(["TOTAL", 
+      fmtMoney(recapSundries.reduce((acc, s) => acc + s.dr, 0)),
+      fmtMoney(recapSundries.reduce((acc, s) => acc + s.cr, 0))
+    ]);
+
+    autoTable(doc, {
+      head: recapHead,
+      body: recapBody,
+      startY: y,
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [15, 39, 68], textColor: 255 },
+      columnStyles: { 0: { cellWidth: 250 }, 1: { halign: "right", cellWidth: 80 }, 2: { halign: "right", cellWidth: 80 } },
+      margin: { left: 30 },
+      didParseCell: (data) => {
+        if (data.row.index === recapBody.length - 1) {
+          data.cell.styles.fillColor = [219, 234, 254];
+          data.cell.styles.fontStyle = "bold";
+        }
+      }
+    });
+  }
+
   doc.save(filename);
 }
+

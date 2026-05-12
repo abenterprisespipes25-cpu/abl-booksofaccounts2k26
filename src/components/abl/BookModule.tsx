@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { MODULES, ModuleId } from "@/lib/abl/config";
-import { sortMonthYears, monthYearToTabLabel, fmtMoney } from "@/lib/abl/format";
+import { sortMonthYears, monthYearToTabLabel, fmtMoney, round2 } from "@/lib/abl/format";
+
 
 import { parseCDB, parsePurchaseBook, parseSalesBook, parseCashReceipts, ParsedResult } from "@/lib/abl/parsers";
 import { exportExcel, exportPDF } from "@/lib/abl/exporters";
@@ -118,10 +119,24 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       count: rows.length,
       totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount), 0),
       totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax || r.vat_input_tax), 0),
-      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top_10k_corp || r.itw_compensation || r.itw_at_source), 0),
     };
-
   }, [rows]);
+
+  const recapSundries = useMemo(() => {
+    if (moduleId !== "cdb") return [];
+    const map = new Map<string, { account: string; dr: number; cr: number }>();
+    rows.forEach(r => {
+      if (r.sundries_acct_title) {
+        const key = r.sundries_acct_title;
+        const existing = map.get(key) || { account: key, dr: 0, cr: 0 };
+        existing.dr = round2(existing.dr + (Number(r.sundries_dr) || 0));
+        existing.cr = round2(existing.cr + (Number(r.sundries_cr) || 0));
+        map.set(key, existing);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.account.localeCompare(b.account));
+  }, [rows, moduleId]);
+
 
 
   // Subscribe to real-time changes
@@ -311,12 +326,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" onClick={() => active && loadRows(active)}>
             <Save className="h-4 w-4 mr-2" /> Save
           </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows })}>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries })}>
             <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
           </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows })}>
+          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries })}>
             <FileText className="h-4 w-4 mr-2" /> Export PDF
           </Button>
+
         </div>
       </div>
 
@@ -357,6 +373,52 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
            )}
         </div>
       )}
+
+      {moduleId === "cdb" && recapSundries.length > 0 && (
+        <div className="mt-12 space-y-4 animate-in slide-in-from-bottom-4 duration-700">
+          <div className="flex flex-col">
+            <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-blue-500 decoration-4 underline-offset-8">
+              Recapitulation of Sundry Accounts
+            </h3>
+            <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
+              Summarized by account title for {active}
+            </p>
+          </div>
+          
+          <div className="max-w-3xl bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
+                  <th className="px-6 py-3 text-left border-r border-white/10">S U N D R I E S</th>
+                  <th className="px-6 py-3 text-right border-r border-white/10 w-32">Debit</th>
+                  <th className="px-6 py-3 text-right w-32">Credit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {recapSundries.map((s, i) => (
+                  <tr key={i} className="hover:bg-white/5 transition-colors">
+                    <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{s.account}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-emerald-400 border-r border-white/5">{s.dr ? fmtMoney(s.dr) : "—"}</td>
+                    <td className="px-6 py-2.5 text-right font-mono text-rose-400">{s.cr ? fmtMoney(s.cr) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-blue-500/10 text-white font-bold border-t border-white/20">
+                  <td className="px-6 py-3 text-right border-r border-white/5">TOTAL</td>
+                  <td className="px-6 py-3 text-right font-mono text-blue-400 border-r border-white/5">
+                    {fmtMoney(recapSundries.reduce((acc, s) => acc + s.dr, 0))}
+                  </td>
+                  <td className="px-6 py-3 text-right font-mono text-blue-400">
+                    {fmtMoney(recapSundries.reduce((acc, s) => acc + s.cr, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
 
       <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
         <AlertDialogContent className="bg-[#0f172a] border-white/10 text-white">

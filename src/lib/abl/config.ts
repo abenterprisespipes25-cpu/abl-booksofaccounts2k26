@@ -100,10 +100,11 @@ export const CDB_COLUMNS: ColumnDef[] = [
   { header: "SALES COMM", header1: "SALES COMM", header2: "3RD PARTY PAY", field: "sales_comm_3rd_party", type: "currency", width: 10 },
   { header: "DELIVERY EXPENSES", header1: "Delivery", header2: "Expenses", field: "delivery_expenses", type: "currency", width: 10 },
   { header: "ADVANCES OFFICERS/EMP", header1: "ADVANCES TO", header2: "OFFICERS/EMP.", field: "advances_officers_emp", type: "currency", width: 10 },
-  { header: "SUNDRIES ACCT", header1: "S  U  N  D  R  I  E  S", header2: "ACCT. TITLE", field: "sundries_acct_title", type: "text", width: 35 },
+  { header: "SUNDRIES ACCT", header1: "S  U  N  D  R  I  E  S", header2: "ACCT. TITLE", field: "sundries_acct_title", type: "text", width: 36 },
   { header: "SUNDRIES DR", header1: "AMOUNT", header2: "DR", field: "sundries_dr", type: "currency", width: 10 },
   { header: "SUNDRIES CR", header1: "AMOUNT", header2: "CR.", field: "sundries_cr", type: "currency", width: 10 },
 ];
+
 
 export const PB_COLUMNS: ColumnDef[] = [
   { header: "DATE", field: "entry_date", type: "date", width: 80 },
