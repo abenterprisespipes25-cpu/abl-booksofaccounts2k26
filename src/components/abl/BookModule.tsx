@@ -513,8 +513,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       rowHtml += "<tr>";
       meta.columns.forEach(c => {
         const val = r[c.field];
-        const display = c.type === "currency" ? (Number(val) ? fmtMoney(Number(val)) : "—") : (c.type === "date" ? fmtDate(val) : (val ?? ""));
-        const align = c.type === "currency" ? "right" : "left";
+        const display = (c.type === "currency" || c.type === "formula") ? (Number(val) ? fmtMoney(Number(val)) : "—") : (c.type === "date" ? fmtDate(val) : (val ?? ""));
+        const align = (c.type === "currency" || c.type === "formula") ? "right" : "left";
         rowHtml += `<td style="${BD};text-align:${align}">${display}</td>`;
       });
       rowHtml += "</tr>";
@@ -523,7 +523,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     // Totals
     rowHtml += `<tr style="background:#f8fafc;font-weight:700">`;
     meta.columns.forEach((c, i) => {
-      if (c.type === "currency") {
+      if (c.type === "currency" || c.type === "formula") {
         const sum = rows.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
         rowHtml += `<td style="${BD};text-align:right">${fmtMoney(sum)}</td>`;
       } else {

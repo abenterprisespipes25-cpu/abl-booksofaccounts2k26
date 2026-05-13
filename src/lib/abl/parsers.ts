@@ -238,6 +238,13 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     "COH:Petty Cash Fund - Vanessa Anne Duce", "COH:Revolving Fund - Office"
   ];
 
+  const wtxAccounts = [
+    "Withholding Tax Payable - Expanded - Top Corp.",
+    "Withholding Tax Payable - Compensation",
+    "Withholding Tax Payable - Expanded - at Source",
+    "Withholding Tax Payable - Final"
+  ];
+
   function detectFund(subRows: any[]) {
     for (const row of subRows) {
       const account = String(row[5] ?? "").trim();
@@ -251,36 +258,26 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     return "";
   }
 
-  function detectCashAmount(subRows: any[]) {
-    for (const row of subRows) {
-      const account = String(row[5] ?? "").trim();
-      const credit = num(row[7]);
-      if (
-        account &&
-        (fundAccounts.includes(account) ||
-         account.startsWith("CIB:") ||
-         account.startsWith("COH:"))
-      ) {
-        if (credit > 0) return credit;
-      }
+  function routeSubRow(account: string, colG: number, colH: number) {
+    if (account.startsWith("CIB:") || account.startsWith("COH:")) {
+      return { column: "SUNDRIES", acct_title: account, dr: colH || 0, cr: 0 };
     }
-    return 0;
-  }
-
-  function routeAccount(accountName: string, debit: number, credit: number) {
-    if (accountName.startsWith("CIB:") || accountName.startsWith("COH:")) {
-      return { column: "SUNDRIES", acct_title: accountName, dr: credit || 0, cr: 0 };
+    if (wtxAccounts.includes(account)) {
+      const mapping = CDB_FIXED_MAPPING[account];
+      return { column: mapping.field, amount: -(colH || 0) };
     }
-    const mapping = CDB_FIXED_MAPPING[accountName];
-    if (mapping && !mapping.match_type) {
-      return { column: mapping.field, amount: debit || credit };
+    if (CDB_FIXED_MAPPING[account] && !CDB_FIXED_MAPPING[account].match_type) {
+      return { column: CDB_FIXED_MAPPING[account].field, amount: colG || 0 };
     }
-    for (const [key, val] of Object.entries(CDB_FIXED_MAPPING)) {
-      if (val.match_type === 'startswith' && accountName.startsWith(key)) {
-        return { column: val.field, amount: debit || credit };
-      }
+    if (account.startsWith("Advances to Employees")) {
+      return { column: "advances_officers_emp", amount: colG || 0 };
     }
-    return { column: 'SUNDRIES', acct_title: accountName, dr: debit || 0, cr: credit || 0 };
+    return {
+      column: "SUNDRIES",
+      acct_title: account,
+      dr: colG || 0,
+      cr: colH || 0
+    };
   }
 
   function classifyAccount(accountName: string) {
@@ -361,7 +358,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
 
       const rawFund = detectFund(txRows);
       const fundLabel = mapFund(rawFund);
-      const cashAmount = detectCashAmount(txRows);
 
       let mainParticulars = "";
       for (const r of txRows) {
@@ -384,22 +380,13 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         check_voucher_no: mainParticulars.toUpperCase().includes("CV") ? mainParticulars.match(/CV\s*(\d+)/i)?.[0] || mainParticulars : "",
         check_no: no,
         fund: fundLabel,
-        cash_amount: cashAmount,
         month_year: my
       };
 
       CDB_FIXED_FIELDS.forEach(f => baseEntry[f] = 0);
       baseEntry.vat_input_tax = 0;
       const sundries: any[] = [];
-
-      // GL STEP 1: Credit FUND/BANK
-      if (rawFund && cashAmount > 0) {
-        glEntries.push({
-          month_year: my, entry_date: iso!, account_name: rawFund,
-          particulars: payee, folio: folio, debit: 0, credit: cashAmount,
-          source_module: 'CDB', source_ref: no
-        });
-      }
+      let computedCashAmount = 0;
 
       for (const r of txRows) {
         const acct = String(r[5] ?? '').trim();
@@ -407,56 +394,83 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         const cr = num(r[7]);
         if (!acct) continue;
 
-        // Route Account
-        const route = routeAccount(acct, dr, cr);
-        if (route.column === "SUNDRIES") {
-          // Exclude main fund from sundries unless it has a debit? The user said fund accounts -> SUNDRIES but with dr: credit, cr: 0. Wait, user specifically said:
-          // "Fund/Bank accounts -> SUNDRIES if (accountName?.startsWith("CIB:") || accountName?.startsWith("COH:")) { return { column:"SUNDRIES", acct_title: accountName, dr: credit || 0, cr: 0 }; }"
-          // But wait! User also said: "Skip the main FUND account itself from being distributed to fixed columns or sundries because it is already captured in the 'FUND' and 'CASH AMOUNT' columns."
-          // Wait, the routing logic they provided says:
-          // `if (accountName?.startsWith("CIB:") || accountName?.startsWith("COH:")) { return { column:"SUNDRIES", acct_title: accountName, dr: credit || 0, cr: 0 }; }`
-          // If we include it in sundries with `dr = credit`, it will double count?
-          // Let's stick to user's exact "ROUTING LOGIC" but with their explicit rule: "Fund/Bank accounts → SUNDRIES".
-          // Actually, if we do that, we get sundries dr = credit. Let's see if we should skip the exact matching `fundAccount` with `cr > 0`.
-          // "CASH AMOUNT = Col H Credit of fund/bank row only"
-          // "ALL other accounts -> SUNDRIES"
-          // Let's implement the routing as specified.
-          
-          if (acct === rawFund && cr === cashAmount && cr > 0) {
-            // Usually we skip the main credit row from being re-added to sundries, to balance the sheet!
-            // I will skip it to maintain balance.
-            continue;
-          }
+        // Skip the main FUND credit from distribution completely so it doesn't double count
+        if (acct === rawFund && dr === 0 && cr > 0) {
+          continue; // The main fund row is skipped, cashAmount will sum from others
+        }
 
+        const route = routeSubRow(acct, dr, cr);
+        if (route.column === "SUNDRIES") {
           sundries.push({ 
             acct_title: route.acct_title, 
             dr: route.dr, 
             cr: route.cr,
             sub_particulars: String(r[4] ?? "").trim() 
           });
+          computedCashAmount += route.dr || 0;
+          computedCashAmount += route.cr || 0;
         } else {
           baseEntry[route.column] = round2((baseEntry[route.column] || 0) + (route.amount || 0));
+          computedCashAmount += route.amount || 0;
         }
 
-        // GL STEP 2: Post each sub-row
-        if (acct !== rawFund || cr !== cashAmount) {
-          const accountType = classifyAccount(acct);
-          const isDebitSide = (
-            accountType === "EXPENSE" ||
-            accountType === "ASSET" ||
-            (accountType === "LIABILITY" && dr > 0)
-          );
-          
-          const rowParticulars = String(r[4] ?? "").trim() || mainParticulars;
+        // GL POSTING FOR THIS SUB ROW
+        const accountType = classifyAccount(acct);
+        const isWTX = wtxAccounts.includes(acct);
+        
+        let glDr = dr;
+        let glCr = cr;
+        
+        if (isWTX) {
+          // Rule: WTX stored as negative, but posted to GL as CR
+          glDr = 0;
+          glCr = Math.abs(cr || dr);
+        } else if (accountType === "EXPENSE" || accountType === "ASSET") {
+          // Generally DR side, unless it's a refund
+          glDr = dr;
+          glCr = cr;
+        } else if (accountType === "LIABILITY") {
+          // e.g. Accounts Payable payment (DR)
+          glDr = dr;
+          glCr = cr;
+        }
 
+        // Let's explicitly match accountant rules
+        if (accountType === "EXPENSE" || acct.startsWith("Advances to Employees")) {
+           glDr = dr || cr; glCr = 0;
+        }
+        if (acct === "Accounts Payable" || acct === "Accounts Payable - Others") {
+           glDr = dr || cr; glCr = 0;
+        }
+        if (acct === "Input VAT") {
+           glDr = dr || cr; glCr = 0;
+        }
+        if (acct === "SSS, PHIC and HDMF Premiums Payable" || acct === "SSS and HDMF Loans Payable") {
+           glDr = dr || cr; glCr = 0;
+        }
+
+        const rowParticulars = String(r[4] ?? "").trim() || mainParticulars;
+
+        if (glDr > 0 || glCr > 0) {
           glEntries.push({
             month_year: my, entry_date: iso!, account_name: acct,
             particulars: rowParticulars, folio: folio, 
-            debit: isDebitSide ? (dr || 0) : 0, 
-            credit: isDebitSide ? 0 : (cr || 0),
+            debit: glDr, credit: glCr,
             source_module: 'CDB', source_ref: no
           });
         }
+      }
+
+      baseEntry.cash_amount = round2(computedCashAmount);
+
+      // GL STEP 1: Credit FUND/BANK
+      if (rawFund && computedCashAmount !== 0) {
+        glEntries.push({
+          month_year: my, entry_date: iso!, account_name: rawFund,
+          particulars: payee, folio: folio, 
+          debit: 0, credit: Math.abs(computedCashAmount),
+          source_module: 'CDB', source_ref: no
+        });
       }
 
       if (sundries.length === 0) {
