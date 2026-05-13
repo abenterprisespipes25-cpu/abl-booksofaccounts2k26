@@ -29,7 +29,7 @@ export default function AppLayout() {
     fetch();
 
     const channel = supabase.channel('company_settings_layout')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'company_settings' }, () => {
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'company_settings' } as any, () => {
         fetch();
       })
       .subscribe();

@@ -38,7 +38,7 @@ export default function TrialBalance() {
 
     // Real-time subscription
     const channel = supabase.channel('trial_balance_realtime')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'gl_entries' }, () => {
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'gl_entries' } as any, () => {
         load();
       })
       .subscribe();

@@ -77,7 +77,7 @@ export default function JournalEntries() {
     load(); 
 
     const channel = supabase.channel('journal_realtime')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'journal_entries' }, () => {
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'journal_entries' } as any, () => {
         load(true);
       })
       .subscribe();

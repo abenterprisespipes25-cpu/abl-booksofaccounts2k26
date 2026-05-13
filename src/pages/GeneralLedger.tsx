@@ -306,7 +306,7 @@ export default function GeneralLedger() {
   useEffect(() => {
     fetchData();
     const ch = supabase.channel("gl_realtime2")
-      .on("postgres_changes" as any, { event:"*", schema:"public", table:"gl_entries" }, () => {
+      .on("postgres_changes" as any, { event:"*", schema:"public", table:"gl_entries" } as any, () => {
         fetchData(true);
         toast.info("General Ledger updated.", { id:"gl-rt" });
       }).subscribe();

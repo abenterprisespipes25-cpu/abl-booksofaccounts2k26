@@ -98,14 +98,14 @@ export default function Maintenance() {
 
     // Subscribe to company_settings
     const companyChannel = supabase.channel('company_settings_realtime')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'company_settings' }, () => {
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'company_settings' } as any, () => {
         loadCompany();
       })
       .subscribe();
 
     // Subscribe to uploaded_files
     const uploadChannel = supabase.channel('uploads_realtime')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'uploaded_files' }, () => {
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'uploaded_files' } as any, () => {
         loadUploads();
       })
       .subscribe();

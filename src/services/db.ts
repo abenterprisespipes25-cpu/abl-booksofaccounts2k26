@@ -47,7 +47,7 @@ type Filter =
 
 type OperationType = 'select' | 'insert' | 'update' | 'delete';
 
-class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
+class QueryBuilder {
   private _table: string;
   private _operation: OperationType = 'select';
   private _filters: Filter[] = [];
@@ -64,7 +64,6 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
   }
 
   select(fields: string = '*'): this {
-    // Handle: .insert(data).select().single() pattern — do NOT override operation
     if (this._operation !== 'insert') {
       this._operation = 'select';
     }
@@ -114,21 +113,24 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
     return this;
   }
 
-  single(): Promise<{ data: any; error: any }> {
+  async single(): Promise<{ data: any; error: any }> {
     this._isSingle = true;
-    return this._execute();
+    return await this._execute();
   }
 
-  maybeSingle(): Promise<{ data: any; error: any }> {
+  async maybeSingle(): Promise<{ data: any; error: any }> {
     this._isMaybeSingle = true;
-    return this._execute();
+    return await this._execute();
   }
 
+  /**
+   * Making it awaitable (PromiseLike)
+   */
   then<TResult1 = { data: any; error: any }, TResult2 = never>(
-    resolve?: ((value: { data: any; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
-    reject?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+    onfulfilled?: ((value: { data: any; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
   ): Promise<TResult1 | TResult2> {
-    return this._execute().then(resolve as any, reject as any);
+    return this._execute().then(onfulfilled, onrejected);
   }
 
   private _applyFilters(rows: any[]): any[] {

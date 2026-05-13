@@ -169,6 +169,18 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
   }, [rows]);
 
+  const recapSundriesPB = useMemo(() => {
+    if (moduleId !== "purchase_book") return [];
+    const map = new Map<string, number>();
+    rows.forEach(r => {
+      if (r.sundries_acct_title) {
+        const key = r.sundries_acct_title;
+        map.set(key, round2((map.get(key) || 0) + (Number(r.sundries_amount) || 0)));
+      }
+    });
+    return Array.from(map.entries()).map(([account, amount]) => ({ account, amount })).sort((a, b) => a.account.localeCompare(b.account));
+  }, [rows, moduleId]);
+
   const recapSundries = useMemo(() => {
     if (moduleId !== "cdb") return [];
     const map = new Map<string, { account: string; dr: number; cr: number }>();
@@ -196,10 +208,9 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
   }, [rows, moduleId]);
 
-  
+  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
 
   const [uploadInfo, setUploadInfo] = useState<{ file_name: string; created_at: string } | null>(null);
-
 
   useEffect(() => {
     async function getStatus() {
@@ -212,24 +223,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
-      setUploadInfo(data);
+      setUploadInfo(data as any);
     }
     getStatus();
   }, [active, meta.glSource]);
-
-  const recapSundriesPB = useMemo(() => {
-    if (moduleId !== "purchase_book") return [];
-    const map = new Map<string, number>();
-    rows.forEach(r => {
-      if (r.sundries_acct_title) {
-        const key = r.sundries_acct_title;
-        map.set(key, round2((map.get(key) || 0) + (Number(r.sundries_amount) || 0)));
-      }
-    });
-    return Array.from(map.entries()).map(([account, amount]) => ({ account, amount })).sort((a, b) => a.account.localeCompare(b.account));
-  }, [rows, moduleId]);
-
-  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
 
 
 
@@ -237,15 +234,19 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
   // Subscribe to real-time changes
   useEffect(() => {
+    let debounceTimer: any = null;
     const channel = supabase
       .channel(`${moduleId}_realtime`)
       .on(
         'postgres_changes' as any,
-        { event: '*', schema: 'public', table: meta.tableName },
+        { event: '*', schema: 'public', table: meta.tableName } as any,
         (payload) => {
           console.log('Real-time change received:', payload);
-          loadMonths();
-          if (active) loadRows(active);
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            loadMonths();
+            if (active) loadRows(active);
+          }, 300);
         }
       )
       .subscribe();
