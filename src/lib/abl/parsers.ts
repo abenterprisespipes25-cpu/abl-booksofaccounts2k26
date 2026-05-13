@@ -86,48 +86,51 @@ function classifyAccount(name: string): "ASSET" | "LIABILITY" | "INCOME" | "EXPE
   return "EXPENSE";
 }
 
-const CDB_ROUTING_MAP: Record<string, { col: string; amount: "col_G" | "col_H_negative" }> = {
-  "Accounts Payable": { col: "accounts_payable", amount: "col_G" },
-  "Accounts Payable - Others": { col: "accounts_payable", amount: "col_G" },
-  "Input VAT": { col: "vat_input_tax", amount: "col_G" },
-  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic": { col: "direct_labor", amount: "col_G" },
-  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Overtime": { col: "direct_labor", amount: "col_G" },
-  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic": { col: "overhead_labor", amount: "col_G" },
-  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Overtime": { col: "overhead_labor", amount: "col_G" },
-  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water": { col: "clw_plant", amount: "col_G" },
-  "General and Administrative Expenses:G&A-Communication, Light & Water": { col: "clw_admin", amount: "col_G" },
-  "Selling Expenses:Selling-Communication, Light & Water": { col: "clw_sales", amount: "col_G" },
-  "Withholding Tax Payable - Expanded - Top Corp.": { col: "itw_top10k", amount: "col_H_negative" },
-  "Withholding Tax Payable - Compensation": { col: "itw_compensation", amount: "col_H_negative" },
-  "Withholding Tax Payable - Expanded - at Source": { col: "itw_at_source", amount: "col_H_negative" },
-  "Withholding Tax Payable - Final": { col: "itw_at_source", amount: "col_H_negative" },
-  "SSS, PHIC and HDMF Premiums Payable": { col: "sss_prem", amount: "col_G" },
-  "SSS and HDMF Loans Payable": { col: "sss_loan", amount: "col_G" },
-  "Cost of Construction:Cons-Outside Services": { col: "outside_services", amount: "col_G" },
-  "Cost of Manufacturing:Overhead:OH-Outside Service": { col: "outside_services", amount: "col_G" },
-  "Cost of Manufacturing:Overhead:OH-Outside Services": { col: "outside_services", amount: "col_G" },
-  "General and Administrative Expenses:G&A-Travel and Transportation": { col: "travel_admin", amount: "col_G" },
-  "Selling Expenses:Selling-Travel and Transportation": { col: "travel_sales", amount: "col_G" },
-  "Cost of Construction:Cons-Travel and Transportation": { col: "travel_const", amount: "col_G" },
-  "Cost of Manufacturing:Overhead:OH-Travel and Transportation": { col: "travel_water", amount: "col_G" },
-  "Selling Expenses:Selling-Commissions": { col: "sales_comm", amount: "col_G" },
-  "Selling Expenses:Selling-Delivery Expense": { col: "delivery_exp", amount: "col_G" },
+const CDB_ROUTING_MAP: Record<string, { col: string }> = {
+  "Accounts Payable": { col: "accounts_payable" },
+  "Accounts Payable - Others": { col: "accounts_payable" },
+  "Input VAT": { col: "vat_input_tax" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic": { col: "direct_labor" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Overtime": { col: "direct_labor" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic": { col: "overhead_labor" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Overtime": { col: "overhead_labor" },
+  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water": { col: "clw_plant" },
+  "General and Administrative Expenses:G&A-Communication, Light & Water": { col: "clw_admin" },
+  "Selling Expenses:Selling-Communication, Light & Water": { col: "clw_sales" },
+  "Withholding Tax Payable - Expanded - Top Corp.": { col: "itw_top10k" },
+  "Withholding Tax Payable - Expanded - Top 10,000 Corp.": { col: "itw_top10k" },
+  "Withholding Tax Payable - Compensation": { col: "itw_compensation" },
+  "Withholding Tax Payable - Expanded - at Source": { col: "itw_at_source" },
+  "Withholding Tax Payable - Expanded - At Source": { col: "itw_at_source" },
+  "Withholding Tax Payable - Final": { col: "itw_at_source" },
+  "SSS, PHIC and HDMF Premiums Payable": { col: "sss_prem" },
+  "SSS and HDMF Loans Payable": { col: "sss_loan" },
+  "Cost of Construction:Cons-Outside Services": { col: "outside_services" },
+  "Cost of Manufacturing:Overhead:OH-Outside Service": { col: "outside_services" },
+  "Cost of Manufacturing:Overhead:OH-Outside Services": { col: "outside_services" },
+  "General and Administrative Expenses:G&A-Travel and Transportation": { col: "travel_admin" },
+  "Selling Expenses:Selling-Travel and Transportation": { col: "travel_sales" },
+  "Cost of Construction:Cons-Travel and Transportation": { col: "travel_const" },
+  "Cost of Manufacturing:Overhead:OH-Travel and Transportation": { col: "travel_water" },
+  "Selling Expenses:Selling-Commissions": { col: "sales_comm" },
+  "Selling Expenses:Selling-Delivery Expense": { col: "delivery_exp" },
 };
 
 function routeCDBSubRow(account: string, colG: number, colH: number) {
   // CIB/COH always -> SUNDRIES
   if (account?.startsWith("CIB:") || account?.startsWith("COH:")) {
-    return { col: "SUNDRIES", acct_title: account, dr: 0, cr: colH || 0 };
+    return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
   }
   // Routing Map
   const route = CDB_ROUTING_MAP[account];
   if (route) {
-    const val = route.amount === "col_H_negative" ? -(colH || 0) : (colG || 0);
+    // ⚠️ Net amount: Debits (G) are positive, Credits (H) are negative
+    const val = round2((colG || 0) - (colH || 0));
     return { col: route.col, amount: val };
   }
   // Advances to Employees
   if (account?.startsWith("Advances to Employees")) {
-    return { col: "advances", amount: colG || 0 };
+    return { col: "advances", amount: round2((colG || 0) - (colH || 0)) };
   }
   // Everything else -> SUNDRIES
   return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
