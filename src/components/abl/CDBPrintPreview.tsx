@@ -38,11 +38,11 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
   const getColHValue = (r: any) => {
     // formula = SUM(I:AE)
     const fields = [
-      'ap_trade_cr', 'input_tax_dr', 'labor_basic_dr', 'labor_overhead_dr',
-      'water_plant_dr', 'water_admin_dr', 'water_sales_dr', 'itw_top10k',
-      'itw_compensation', 'itw_at_source', 'prem_payable', 'loan_payable',
-      'outside_services_dr', 'travel_admin_dr', 'travel_sales_dr', 'travel_const_dr',
-      'travel_water_dr', 'sales_comm_dr', 'delivery_exp_dr', 'advances_officers_dr',
+      'accounts_payable', 'vat_input_tax', 'direct_labor', 'overhead_labor',
+      'clw_plant', 'clw_admin', 'clw_sales', 'itw_top10k',
+      'itw_compensation', 'itw_at_source', 'sss_prem', 'sss_loan',
+      'outside_services', 'travel_admin', 'travel_sales', 'travel_const',
+      'travel_water', 'sales_comm', 'delivery_exp', 'advances',
       'sundries_dr', 'sundries_cr'
     ];
     return fields.reduce((sum, f) => sum + (Number(r[f]) || 0), 0);
@@ -194,31 +194,31 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                     <td className="center">{fmtDate(r.entry_date)}</td>
                     <td className="left">{r.payee}</td>
                     <td className="left">{r.particulars}</td>
-                    <td className="center">{r.petty_vno}</td>
+                    <td className="center">{r.petty_cash_vno}</td>
                     <td className="center">{r.check_vno}</td>
                     <td className="center">{r.check_no}</td>
-                    <td className="center">{r.fund}</td>
+                    <td className="center">{r.fund_label}</td>
                     <td className="num">{fmtMoney(getColHValue(r))}</td>
-                    <td className="num">{fmtMoney(r.ap_trade_cr)}</td>
-                    <td className="num">{fmtMoney(r.input_tax_dr)}</td>
-                    <td className="num">{fmtMoney(r.labor_basic_dr)}</td>
-                    <td className="num">{fmtMoney(r.labor_overhead_dr)}</td>
-                    <td className="num">{fmtMoney(r.water_plant_dr)}</td>
-                    <td className="num">{fmtMoney(r.water_admin_dr)}</td>
-                    <td className="num">{fmtMoney(r.water_sales_dr)}</td>
+                    <td className="num">{fmtMoney(r.accounts_payable)}</td>
+                    <td className="num">{fmtMoney(r.vat_input_tax)}</td>
+                    <td className="num">{fmtMoney(r.direct_labor)}</td>
+                    <td className="num">{fmtMoney(r.overhead_labor)}</td>
+                    <td className="num">{fmtMoney(r.clw_plant)}</td>
+                    <td className="num">{fmtMoney(r.clw_admin)}</td>
+                    <td className="num">{fmtMoney(r.clw_sales)}</td>
                     <td className="num">{fmtMoney(r.itw_top10k)}</td>
                     <td className="num">{fmtMoney(r.itw_compensation)}</td>
                     <td className="num">{fmtMoney(r.itw_at_source)}</td>
-                    <td className="num">{fmtMoney(r.prem_payable)}</td>
-                    <td className="num">{fmtMoney(r.loan_payable)}</td>
-                    <td className="num">{fmtMoney(r.outside_services_dr)}</td>
-                    <td className="num">{fmtMoney(r.travel_admin_dr)}</td>
-                    <td className="num">{fmtMoney(r.travel_sales_dr)}</td>
-                    <td className="num">{fmtMoney(r.travel_const_dr)}</td>
-                    <td className="num">{fmtMoney(r.travel_water_dr)}</td>
-                    <td className="num">{fmtMoney(r.sales_comm_dr)}</td>
-                    <td className="num">{fmtMoney(r.delivery_exp_dr)}</td>
-                    <td className="num">{fmtMoney(r.advances_officers_dr)}</td>
+                    <td className="num">{fmtMoney(r.sss_prem)}</td>
+                    <td className="num">{fmtMoney(r.sss_loan)}</td>
+                    <td className="num">{fmtMoney(r.outside_services)}</td>
+                    <td className="num">{fmtMoney(r.travel_admin)}</td>
+                    <td className="num">{fmtMoney(r.travel_sales)}</td>
+                    <td className="num">{fmtMoney(r.travel_const)}</td>
+                    <td className="num">{fmtMoney(r.travel_water)}</td>
+                    <td className="num">{fmtMoney(r.sales_comm)}</td>
+                    <td className="num">{fmtMoney(r.delivery_exp)}</td>
+                    <td className="num">{fmtMoney(r.advances)}</td>
                     <td className="left">{r.sundries_title}</td>
                     <td className="num">{fmtMoney(r.sundries_dr)}</td>
                     <td className="num">{fmtMoney(r.sundries_cr)}</td>
@@ -237,26 +237,26 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                       <td className="center font-bold"></td>
                       <td className="left font-bold" colSpan={6}>GRAND TOTAL</td>
                       <td className="num font-bold">{fmtMoney(colHGrandTotal)}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('ap_trade_cr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('input_tax_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('labor_basic_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('labor_overhead_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('water_plant_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('water_admin_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('water_sales_dr'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('accounts_payable'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('vat_input_tax'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('direct_labor'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('overhead_labor'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('clw_plant'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('clw_admin'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('clw_sales'))}</td>
                       <td className="num font-bold">{fmtMoney(calculateGrandTotal('itw_top10k'))}</td>
                       <td className="num font-bold">{fmtMoney(calculateGrandTotal('itw_compensation'))}</td>
                       <td className="num font-bold">{fmtMoney(calculateGrandTotal('itw_at_source'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('prem_payable'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('loan_payable'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('outside_services_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_admin_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_sales_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_const_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_water_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('sales_comm_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('delivery_exp_dr'))}</td>
-                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('advances_officers_dr'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('sss_prem'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('sss_loan'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('outside_services'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_admin'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_sales'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_const'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('travel_water'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('sales_comm'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('delivery_exp'))}</td>
+                      <td className="num font-bold">{fmtMoney(calculateGrandTotal('advances'))}</td>
                       <td className="left font-bold"></td>
                       <td className="num font-bold">{fmtMoney(calculateGrandTotal('sundries_dr'))}</td>
                       <td className="num font-bold">{fmtMoney(calculateGrandTotal('sundries_cr'))}</td>
