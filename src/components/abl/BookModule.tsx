@@ -12,6 +12,7 @@ import { LedgerTable } from "./LedgerTable";
 import { Button } from "@/components/ui/button";
 import { Upload, FileSpreadsheet, FileText, Printer, Save, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { CDBPrintPreview } from "./CDBPrintPreview";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -57,6 +58,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const [syncing, setSyncing] = useState(false);
   const [pending, setPending] = useState<{ parsed: ParsedResult<any>; fileName: string; conflictMonths: string[] } | null>(null);
   const [glValidation, setGLValidation] = useState<{ parsed: ParsedResult<any>; fileName: string; totalDr: number; totalCr: number; diff: number } | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadMonths = useCallback(async (silent = false) => {
@@ -642,27 +644,110 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
             ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
           />
-          <Button onClick={() => fileRef.current?.click()} disabled={uploading} className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20">
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+          
+          <button 
+            onClick={() => fileRef.current?.click()} 
+            disabled={uploading} 
+            className="toolbar-btn"
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             Upload Excel
-          </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" onClick={() => active && loadRows(active)}>
-            <Save className="h-4 w-4 mr-2" /> Save
-          </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportExcel({ filename: `${filenameBase}.xlsx`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}>
-            <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
-          </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}>
+          </button>
+
+          <button 
+            disabled={!rows.length} 
+            onClick={() => setIsPreviewOpen(true)}
+            className="toolbar-btn print"
+          >
+            <Printer className="h-4 w-4" />
+            Print Preview
+          </button>
+
+          <button 
+            disabled={!rows.length} 
+            onClick={() => active && exportExcel({ 
+              filename: `CDB_${(settings?.company_name || "COMPANY").replace(/\s+/g, "_")}_${active.replace(/\s+/g, "_")}.xlsx`, 
+              bookName, 
+              monthYear: active, 
+              columns: meta.columns, 
+              rows, 
+              recapSundries: recapSundriesData, 
+              recapFunds 
+            })}
+            className="toolbar-btn export"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Export Excel
+          </button>
+
+          <button 
+            variant="outline" 
+            className="bg-white/5 border-white/10 text-white hover:bg-white/10" 
+            disabled={!rows.length} 
+            onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}
+          >
             <FileText className="h-4 w-4 mr-2" /> Export PDF
-          </Button>
-          <Button variant="outline" className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={!rows.length} onClick={handlePrint}>
-            <Printer className="h-4 w-4 mr-2" /> Print Preview
-          </Button>
+          </button>
 
-
-
+          <button 
+            variant="outline" 
+            className="bg-white/5 border-white/10 text-white hover:bg-white/10" 
+            onClick={() => active && loadRows(active)}
+          >
+            <Save className="h-4 w-4 mr-2" /> Save
+          </button>
         </div>
       </div>
+
+      <CDBPrintPreview 
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        rows={rows}
+        companyName={settings?.company_name || "JHAYMARTS INDUSTRIES, INC."}
+        monthYear={active || ""}
+      />
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        .toolbar-btn {
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.2);
+          border-radius: 8px;
+          color: #ffffff;
+          padding: 8px 16px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 0.2s ease;
+          backdrop-filter: blur(8px);
+        }
+
+        .toolbar-btn:hover:not(:disabled) {
+          background: rgba(0,170,255,0.2);
+          border-color: rgba(0,170,255,0.4);
+          color: #00aaff;
+          transform: translateY(-1px);
+        }
+
+        .toolbar-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .toolbar-btn.export {
+          background: rgba(0,200,100,0.15);
+          border-color: rgba(0,200,100,0.3);
+          color: #00c864;
+        }
+
+        .toolbar-btn.print {
+          background: rgba(255,165,0,0.15);
+          border-color: rgba(255,165,0,0.3);
+          color: #ffa500;
+        }
+      `}} />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
