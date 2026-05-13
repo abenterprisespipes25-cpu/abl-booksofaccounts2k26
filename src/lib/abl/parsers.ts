@@ -152,19 +152,28 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
 
     // Grouping by Date/Payee block
     for (const r of dataRows) {
+      // 1. Skip truly empty rows
       if (!r || r.every(c => String(c).trim() === "")) continue;
-      const acct = String(r[5] || "").trim();
-      if (acct === "") break; // Stop Rule
 
+      const acct = String(r[5] || "").trim();
       const iso = toISODate(r[0]);
       const no = String(r[2] || "").trim();
       const payee = String(r[3] || "").trim();
 
+      // 2. Detect start of a new transaction (Date + [No or Payee])
       if (iso && (no || payee)) {
         if (curGroup.length > 0) groups.push(curGroup);
         curGroup = [r];
-      } else {
-        curGroup.push(r);
+      } 
+      // 3. Else if it has an account, it's a sub-row/distribution row
+      else if (acct) {
+        if (curGroup.length > 0) {
+          curGroup.push(r);
+        }
+      }
+      // 4. Else it's a row with data but no account/header (e.g. spacer, totals) - skip safely
+      else {
+        continue;
       }
     }
     if (curGroup.length > 0) groups.push(curGroup);
