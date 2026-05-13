@@ -27,21 +27,21 @@ export interface ModuleMeta {
 }
 
 export const FUND_MAP: Record<string, string> = {
-  "CIB:BDO Admin": "BDO-ADMIN",
-  "CIB:BDO Plant": "BDO-PLANT",
-  "CIB:BDO ATSA": "BDO-ATSA",
-  "CIB:LBP": "LBP",
-  "CIB:LBP DOST": "LBP-DOST",
-  "CIB:BDO Dollar Savings": "BDO-DOLLAR",
-  "CIB:Eastwest": "EASTWEST",
-  "CIB:Eastwest Dollar Savings": "EW-DOLLAR",
-  "COH:Petty Cash Fund - ASTL Plant": "PCF-PLANT",
-  "COH:Petty Cash Fund - ASTL Construction": "PCF-CONST",
-  "COH:Petty Cash Fund - Leonilo Acuña": "PCF-ACUÑA",
-  "COH:Petty Cash Fund - Michael White": "PCF-WHITE",
-  "COH:Petty Cash Fund - Vanessa Anne Duce": "PCF-DUCE",
-  "COH:Petty Cash Fund- Vanessa Anne Duce": "PCF-DUCE",
-  "COH:Revolving Fund - Office": "REV-OFFICE",
+  "CIB:BDO Admin": "CIB Admin",
+  "CIB:BDO Plant": "CIB Plant",
+  "CIB:BDO ATSA": "CIB ATSA",
+  "CIB:LBP": "CIB",
+  "CIB:LBP DOST": "CIB DOST",
+  "CIB:BDO Dollar Savings": "CIB Dollar Savings",
+  "CIB:Eastwest": "CIB",
+  "CIB:Eastwest Dollar Savings": "CIB Dollar Savings",
+  "COH:Petty Cash Fund - ASTL Plant": "COH Cash Fund - ASTL Plant",
+  "COH:Petty Cash Fund - ASTL Construction": "COH Cash Fund - ASTL Construction",
+  "COH:Petty Cash Fund - Leonilo Acuña": "COH Cash Fund - Leonilo Acuña",
+  "COH:Petty Cash Fund - Michael White": "COH Cash Fund - Michael White",
+  "COH:Petty Cash Fund - Vanessa Anne Duce": "COH Cash Fund- Vanessa Anne Duce",
+  "COH:Petty Cash Fund- Vanessa Anne Duce": "COH Cash Fund- Vanessa Anne Duce",
+  "COH:Revolving Fund - Office": "COH Fund - Office",
 };
 
 export const FUND_TO_GL_ACCOUNT: Record<string, string> = {
