@@ -341,7 +341,7 @@ export async function exportCDBExcel(opts: {
   columns: ColumnDef[];
   rows: any[];
 }) {
-  const { filename, bookName, monthYear, rows } = opts;
+  const { filename, monthYear, rows } = opts;
   const settings = await getCompanySettings();
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet("CDB", {
@@ -361,7 +361,7 @@ export async function exportCDBExcel(opts: {
   // Page Footer
   ws.headerFooter.oddFooter = "&C&\"Arial\"&8Page &P of &N";
 
-  // Column Widths
+  // Column Widths (Exact from reference)
   const columnWidths: Record<string, number> = {
     A: 8.78, B: 25.78, C: 30.78, D: 10.66, E: 10.78, F: 10.78, G: 10.78,
     H: 10.78, I: 10.78, J: 10.78, K: 10.78, L: 10.78, M: 10.78, N: 10.78,
@@ -388,8 +388,9 @@ export async function exportCDBExcel(opts: {
   ws.addRow([`FOR THE MONTH OF ${monthYear.toUpperCase()}`]);
   
   [1, 2, 3].forEach(r => {
-    ws.getRow(r).getCell(1).font = fontArial10Bold;
-    ws.getRow(r).height = 16.5;
+    const row = ws.getRow(r);
+    row.getCell(1).font = fontArial10Bold;
+    row.height = 16.5;
   });
 
   // Blank spacer rows (4-7)
@@ -427,16 +428,19 @@ export async function exportCDBExcel(opts: {
   ws.addRow(row8Vals);
   ws.mergeCells("V8:W8");
   ws.mergeCells("X8:Y8");
+  ws.mergeCells("AD8:AE8"); // Added AD8:AE8 merge as implied by spec
   ws.getRow(8).height = 16.5;
-  ws.getRow(8).eachCell(cell => {
-    cell.font = fontArial8Bold;
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = medBorder;
+  ws.getRow(8).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    if (colNumber <= 31) {
+      cell.font = fontArial8Bold;
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = medBorder;
+    }
   });
 
   // Header Row 9
   const row9Vals = [
-    monthYear.substring(0, 3).toUpperCase() + "., " + monthYear.split(" ")[1], // e.g. "JAN., 2025"
+    monthYear.substring(0, 3).toUpperCase() + "., " + monthYear.split(" ")[1],
     "PAYEE", "PARTICULARS", "VOUCHER NO.", "VOUCHER NO.", "CHECK NO.", "FUND", "AMOUNT",
     "PAYABLE-TRADE", "INPUT TAX", "LABOR / BASIC", "LABOR  / BASIC", "WATER-PLANT",
     "WATER-ADMIN", "WATER-SALES", "TOP 10K CORP.", "COMPENSATION", "AT SOURCE",
@@ -446,10 +450,12 @@ export async function exportCDBExcel(opts: {
   ];
   ws.addRow(row9Vals);
   ws.getRow(9).height = 16.5;
-  ws.getRow(9).eachCell(cell => {
-    cell.font = fontArial8Bold;
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = medBorder;
+  ws.getRow(9).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    if (colNumber <= 31) {
+      cell.font = fontArial8Bold;
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = medBorder;
+    }
   });
 
   // Data Rows
@@ -464,7 +470,7 @@ export async function exportCDBExcel(opts: {
       r.check_vno || "",
       r.check_no || "",
       r.fund_label || "",
-      { formula: `SUM(I${rowIndex}:AE${rowIndex})` }, // Col H (8)
+      { formula: `SUM(I${rowIndex}:AE${rowIndex})` }, // Col H
       r.accounts_payable || 0,
       r.vat_input_tax || 0,
       r.direct_labor || 0,
@@ -491,17 +497,19 @@ export async function exportCDBExcel(opts: {
     ];
     const row = ws.addRow(rowData);
     row.height = 16.5;
-    row.eachCell((cell, colNumber) => {
-      cell.font = fontArial10;
-      cell.border = thinBorder;
-      if (colNumber === 1) cell.alignment = { horizontal: "center" };
-      else if (colNumber === 2 || colNumber === 3) cell.alignment = { horizontal: "left" };
-      else if (colNumber === 4) cell.alignment = { horizontal: "center" };
-      else if (colNumber === 5) cell.alignment = { horizontal: "right" };
-      else if (colNumber === 6 || colNumber === 7) cell.alignment = { horizontal: "center" };
-      else {
-        cell.alignment = { horizontal: "right" };
-        cell.numFmt = numFmt;
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      if (colNumber <= 31) {
+        cell.font = fontArial10;
+        cell.border = thinBorder;
+        if (colNumber === 1) cell.alignment = { horizontal: "center" };
+        else if (colNumber === 2 || colNumber === 3) cell.alignment = { horizontal: "left" };
+        else if (colNumber === 4) cell.alignment = { horizontal: "center" };
+        else if (colNumber === 5) cell.alignment = { horizontal: "right" };
+        else if (colNumber === 6 || colNumber === 7) cell.alignment = { horizontal: "center" };
+        else {
+          cell.alignment = { horizontal: "right" };
+          cell.numFmt = numFmt;
+        }
       }
     });
   });
@@ -525,29 +533,33 @@ export async function exportCDBExcel(opts: {
   }
   const gtRow = ws.addRow(gtVals);
   gtRow.height = 16.5;
-  gtRow.eachCell((cell, colNumber) => {
-    cell.font = fontArial10Bold;
-    cell.border = medBorder;
-    if (colNumber >= 8) {
-      cell.numFmt = numFmt;
-      cell.alignment = { horizontal: "right" };
+  gtRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    if (colNumber <= 31) {
+      cell.font = fontArial10Bold;
+      cell.border = medBorder;
+      if (colNumber >= 8) {
+        cell.numFmt = numFmt;
+        cell.alignment = { horizontal: "right" };
+      }
     }
   });
 
   // Verification Rows
   const v1Row = ws.addRow([]);
   v1Row.height = 16.5;
-  v1Row.getCell(8).value = { formula: `SUM(I${gtRowIndex}:AE${gtRowIndex})` };
-  v1Row.getCell(8).font = fontArial10Bold;
-  v1Row.getCell(8).numFmt = numFmt;
-  v1Row.getCell(8).alignment = { horizontal: "right" };
+  const v1Cell = v1Row.getCell(8);
+  v1Cell.value = { formula: `SUM(I${gtRowIndex}:AE${gtRowIndex})` };
+  v1Cell.font = fontArial10Bold;
+  v1Cell.numFmt = numFmt;
+  v1Cell.alignment = { horizontal: "right" };
 
   const v2Row = ws.addRow([]);
   v2Row.height = 16.5;
-  v2Row.getCell(8).value = { formula: `H${gtRowIndex} - H${gtRowIndex + 1}` };
-  v2Row.getCell(8).font = fontArial10Bold;
-  v2Row.getCell(8).numFmt = numFmt;
-  v2Row.getCell(8).alignment = { horizontal: "right" };
+  const v2Cell = v2Row.getCell(8);
+  v2Cell.value = { formula: `H${gtRowIndex} - H${gtRowIndex + 1}` };
+  v2Cell.font = fontArial10Bold;
+  v2Cell.numFmt = numFmt;
+  v2Cell.alignment = { horizontal: "right" };
 
   // Generate Buffer and Download
   const buffer = await workbook.xlsx.writeBuffer();
