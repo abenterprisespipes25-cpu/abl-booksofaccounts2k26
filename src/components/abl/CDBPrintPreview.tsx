@@ -116,7 +116,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
             className={`preview-page ${pageIdx === currentPage ? "block" : "hidden print:block"}`}
           >
             {/* Header Content */}
-            <div className="mb-4">
+            <div className="mb-10"> {/* Margin for blank spacer rows (4-7) */}
               <div className="font-bold text-[10pt] font-arial">{companyName}</div>
               <div className="font-bold text-[10pt] font-arial uppercase">Cash Disbursements Book</div>
               <div className="font-bold text-[10pt] font-arial uppercase">For the Month of {monthYear}</div>
@@ -125,7 +125,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
             {/* Table */}
             <table className="preview-table">
               <thead>
-                <tr>
+                <tr className="head-row-1">
                   <th style={{ width: previewColWidths.A }}>DATE</th>
                   <th colSpan={2} style={{ width: previewColWidths.B + previewColWidths.C }}></th>
                   <th style={{ width: previewColWidths.D }}>PETTY CASH</th>
@@ -154,8 +154,8 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                   <th style={{ width: previewColWidths.AC }}>S  U  N  D  R  I  E  S</th>
                   <th colSpan={2} style={{ width: previewColWidths.AD + previewColWidths.AE }}>A M O U N T</th>
                 </tr>
-                <tr>
-                  <th>{monthYear.substring(0, 3).toUpperCase()}., {monthYear.split(' ')[1]}</th>
+                <tr className="head-row-2">
+                  <th>{monthYear ? `${monthYear.substring(0, 3).toUpperCase()}., ${monthYear.split(' ')[1]}` : ""}</th>
                   <th style={{ width: previewColWidths.B }}>PAYEE</th>
                   <th style={{ width: previewColWidths.C }}>PARTICULARS</th>
                   <th>VOUCHER NO.</th>
@@ -225,7 +225,6 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                   </tr>
                 ))}
                 
-                {/* Fill empty rows to maintain page height if needed, but here we just append totals on last page */}
                 {pageIdx === totalPages - 1 && (
                   <>
                     <tr className="sep-row">
@@ -296,7 +295,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
           .no-print { display: none !important; }
           .preview-page {
             width: 14in !important;
-            height: 8.5in !important;
+            min-height: 8.5in !important;
             padding: 0.75in 1.28in 0.75in 1.25in !important;
             margin: 0 !important;
             box-shadow: none !important;
@@ -333,7 +332,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
           font-size: 7pt;
           font-weight: bold;
           text-align: center;
-          border: 1px solid #000;
+          border: 1.5px solid #000;
           padding: 2px 3px;
           background: #ffffff;
           white-space: nowrap;
