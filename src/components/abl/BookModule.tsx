@@ -59,6 +59,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const [pending, setPending] = useState<{ parsed: ParsedResult<any>; fileName: string; conflictMonths: string[] } | null>(null);
   const [glValidation, setGLValidation] = useState<{ parsed: ParsedResult<any>; fileName: string; totalDr: number; totalCr: number; diff: number } | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [companySettings, setCompanySettings] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadMonths = useCallback(async (silent = false) => {
@@ -261,6 +262,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
   useEffect(() => { loadMonths(true); }, [loadMonths]);
   useEffect(() => { if (active) loadRows(active); }, [active, loadRows]);
+  
+  useEffect(() => {
+    getCompanySettings().then(setCompanySettings);
+  }, []);
 
   const handleSave = async (updatedRow: any) => {
     try {
@@ -666,7 +671,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <button 
             disabled={!rows.length} 
             onClick={() => active && exportExcel({ 
-              filename: `CDB_${(settings?.company_name || "COMPANY").replace(/\s+/g, "_")}_${active.replace(/\s+/g, "_")}.xlsx`, 
+              filename: `CDB_${(companySettings?.company_name || "COMPANY").replace(/\s+/g, "_")}_${active.replace(/\s+/g, "_")}.xlsx`, 
               bookName, 
               monthYear: active, 
               columns: meta.columns, 
@@ -703,7 +708,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
         rows={rows}
-        companyName={settings?.company_name || "JHAYMARTS INDUSTRIES, INC."}
+        companyName={companySettings?.company_name || "JHAYMARTS INDUSTRIES, INC."}
         monthYear={active || ""}
       />
 
