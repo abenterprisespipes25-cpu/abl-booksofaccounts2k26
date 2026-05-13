@@ -1,5 +1,6 @@
 // ABL v2.2 — Professional Accounting Excel / PDF Export
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { ColumnDef } from "./config";
