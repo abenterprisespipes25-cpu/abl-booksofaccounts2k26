@@ -670,12 +670,14 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           <p className="text-xl font-black text-white">{stats.count}</p>
         </div>
         <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
-          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Total Purchases</p>
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">
+            {moduleId === "cdb" ? "Total Disbursements" : moduleId === "purchase_book" ? "Total Purchases" : moduleId === "sales_book" ? "Total Sales" : "Total Receipts"}
+          </p>
           <p className="text-xl font-black text-white">{fmtMoney(stats.totalAmount)}</p>
         </div>
         <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
           <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">
-            {moduleId === "purchase_book" ? "TOTAL ITW TOP 10T" : "Total VAT"}
+            {moduleId === "purchase_book" ? "ITW TOP 10T" : "Total VAT"}
           </p>
           <p className="text-xl font-black text-blue-400">
             {moduleId === "purchase_book" ? fmtMoney(stats.totalItwTop10) : fmtMoney(stats.totalVat)}
