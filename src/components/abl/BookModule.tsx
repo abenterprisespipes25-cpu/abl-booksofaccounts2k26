@@ -533,14 +533,14 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     rowHtml += "</tr>";
 
     const isPortrait = moduleId === "sales_book" || moduleId === "cash_receipts";
-    const pageSize = isPortrait ? "letter portrait" : "legal landscape";
+    const pageConfig = isPortrait ? "215.9mm 279.4mm portrait" : "355.6mm 215.9mm landscape"; // Legal Landscape
 
     const html = `<!DOCTYPE html><html><head><style>
       *{font-family:Arial,sans-serif;box-sizing:border-box;margin:0;padding:0}
       body{padding:10mm 12mm; padding-bottom: 20mm;} 
       table{width:100%;border-collapse:collapse}
       @media print {
-        @page { size: ${pageSize}; margin: 10mm; }
+        @page { size: ${pageConfig}; margin: 8mm; }
         .no-print { display: none; }
         .page-footer {
           position: fixed;
