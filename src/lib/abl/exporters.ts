@@ -68,6 +68,11 @@ export async function exportExcel(opts: {
   recapFunds?: { fund: string; amount: number }[];
 }) {
   const { filename, bookName, monthYear, columns, rows, recapSundries, recapFunds } = opts;
+  
+  if (bookName.toUpperCase().includes("CASH DISBURSEMENT")) {
+    return exportCDBExcel(opts);
+  }
+
   const settings = await getCompanySettings();
   const colCount = columns.length;
 
@@ -326,6 +331,233 @@ export async function exportExcel(opts: {
 
   // Write with cellStyles enabled (required for XLSX-style)
   XLSX.writeFile(wb, filename, { bookType: "xlsx", cellStyles: true });
+}
+
+/** Professional CDB Export using ExcelJS for exact print layout */
+export async function exportCDBExcel(opts: {
+  filename: string;
+  bookName: string;
+  monthYear: string;
+  columns: ColumnDef[];
+  rows: any[];
+}) {
+  const { filename, bookName, monthYear, rows } = opts;
+  const settings = await getCompanySettings();
+  const workbook = new ExcelJS.Workbook();
+  const ws = workbook.addWorksheet("CDB", {
+    pageSetup: {
+      paperSize: 5, // Legal
+      orientation: "landscape",
+      scale: 75,
+      margins: {
+        left: 1.25, right: 1.28,
+        top: 0.75, bottom: 0.75,
+        header: 0.3, footer: 0.3
+      },
+      printTitlesRow: "1:9"
+    }
+  });
+
+  // Page Footer
+  ws.headerFooter.oddFooter = "&C&\"Arial\"&8Page &P of &N";
+
+  // Column Widths
+  const columnWidths: Record<string, number> = {
+    A: 8.78, B: 25.78, C: 30.78, D: 10.66, E: 10.78, F: 10.78, G: 10.78,
+    H: 10.78, I: 10.78, J: 10.78, K: 10.78, L: 10.78, M: 10.78, N: 10.78,
+    O: 10.78, P: 10.78, Q: 10.78, R: 10.78, S: 10.78, T: 10.78, U: 10.78,
+    V: 10.78, W: 10.78, X: 10.78, Y: 10.78, Z: 10.78, AA: 10.78, AB: 10.78,
+    AC: 36.44, AD: 10.78, AE: 10.78
+  };
+  Object.entries(columnWidths).forEach(([col, width], idx) => {
+    ws.getColumn(idx + 1).width = width;
+  });
+
+  // Styles
+  const fontArial10 = { name: "Arial", size: 10 };
+  const fontArial10Bold = { name: "Arial", size: 10, bold: true };
+  const fontArial8Bold = { name: "Arial", size: 8, bold: true };
+  const medSide = { style: "medium" as any, color: { argb: "000000" } };
+  const thinSide = { style: "thin" as any, color: { argb: "000000" } };
+  const medBorder = { top: medSide, bottom: medSide, left: medSide, right: medSide };
+  const thinBorder = { top: thinSide, bottom: thinSide, left: thinSide, right: thinSide };
+
+  // Headers (Rows 1-3)
+  ws.addRow([settings.company_name || "JHAYMARTS INDUSTRIES, INC."]);
+  ws.addRow(["CASH DISBURSEMENTS BOOK"]);
+  ws.addRow([`FOR THE MONTH OF ${monthYear.toUpperCase()}`]);
+  
+  [1, 2, 3].forEach(r => {
+    ws.getRow(r).getCell(1).font = fontArial10Bold;
+    ws.getRow(r).height = 16.5;
+  });
+
+  // Blank spacer rows (4-7)
+  for (let i = 4; i <= 7; i++) {
+    ws.addRow([]);
+    ws.getRow(i).height = 16.5;
+  }
+
+  // Header Row 8
+  const row8Vals = Array(31).fill("");
+  row8Vals[0] = "DATE";
+  row8Vals[3] = "PETTY CASH";
+  row8Vals[4] = "CHECK";
+  row8Vals[7] = "CASH";
+  row8Vals[8] = "ACCOUNTS";
+  row8Vals[9] = "VAT";
+  row8Vals[10] = "DIRECT";
+  row8Vals[11] = "OVERHEAD";
+  row8Vals[12] = "COMM., LIGHT &";
+  row8Vals[13] = "COMM., LIGHT &";
+  row8Vals[14] = "COMM., LIGHT &";
+  row8Vals[15] = "ITW";
+  row8Vals[16] = "ITW";
+  row8Vals[17] = "ITW";
+  row8Vals[18] = "SSS, PHIC & HDMF";
+  row8Vals[19] = "SSS/HDMF";
+  row8Vals[20] = "OUTSIDE SERVICES";
+  row8Vals[21] = "TRAVEL & TRANSPORTATION";
+  row8Vals[23] = "TRAVEL & TRANSPORTATION";
+  row8Vals[25] = "SALES COMM";
+  row8Vals[26] = "Delivery";
+  row8Vals[27] = "ADVANCES TO";
+  row8Vals[28] = "S  U  N  D  R  I  E  S";
+  row8Vals[29] = "A M O U N T";
+  ws.addRow(row8Vals);
+  ws.mergeCells("V8:W8");
+  ws.mergeCells("X8:Y8");
+  ws.getRow(8).height = 16.5;
+  ws.getRow(8).eachCell(cell => {
+    cell.font = fontArial8Bold;
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = medBorder;
+  });
+
+  // Header Row 9
+  const row9Vals = [
+    monthYear.substring(0, 3).toUpperCase() + "., " + monthYear.split(" ")[1], // e.g. "JAN., 2025"
+    "PAYEE", "PARTICULARS", "VOUCHER NO.", "VOUCHER NO.", "CHECK NO.", "FUND", "AMOUNT",
+    "PAYABLE-TRADE", "INPUT TAX", "LABOR / BASIC", "LABOR  / BASIC", "WATER-PLANT",
+    "WATER-ADMIN", "WATER-SALES", "TOP 10K CORP.", "COMPENSATION", "AT SOURCE",
+    "PREM. PAYABLE", "LOAN PAYABLE", "Construction", "ADMIN.", "SALES",
+    "CONSTRUCTION", "WATER", "3RD PARTY PAY", "Expenses", "OFFICERS/EMP.",
+    "ACCT. TITLE", "DR", "CR."
+  ];
+  ws.addRow(row9Vals);
+  ws.getRow(9).height = 16.5;
+  ws.getRow(9).eachCell(cell => {
+    cell.font = fontArial8Bold;
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = medBorder;
+  });
+
+  // Data Rows
+  const numFmt = '#,##0.00';
+  rows.forEach((r, idx) => {
+    const rowIndex = idx + 10;
+    const rowData = [
+      fmtDate(r.entry_date),
+      r.payee || "",
+      r.particulars || "",
+      r.petty_vno || "",
+      r.check_vno || "",
+      r.check_no || "",
+      r.fund || "",
+      { formula: `SUM(I${rowIndex}:AE${rowIndex})` }, // Col H (8)
+      r.ap_trade_cr || 0,
+      r.input_tax_dr || 0,
+      r.labor_basic_dr || 0,
+      r.labor_overhead_dr || 0,
+      r.water_plant_dr || 0,
+      r.water_admin_dr || 0,
+      r.water_sales_dr || 0,
+      r.itw_top10k || 0,
+      r.itw_compensation || 0,
+      r.itw_at_source || 0,
+      r.prem_payable || 0,
+      r.loan_payable || 0,
+      r.outside_services_dr || 0,
+      r.travel_admin_dr || 0,
+      r.travel_sales_dr || 0,
+      r.travel_const_dr || 0,
+      r.travel_water_dr || 0,
+      r.sales_comm_dr || 0,
+      r.delivery_exp_dr || 0,
+      r.advances_officers_dr || 0,
+      r.sundries_title || "",
+      r.sundries_dr || 0,
+      r.sundries_cr || 0
+    ];
+    const row = ws.addRow(rowData);
+    row.height = 16.5;
+    row.eachCell((cell, colNumber) => {
+      cell.font = fontArial10;
+      cell.border = thinBorder;
+      if (colNumber === 1) cell.alignment = { horizontal: "center" };
+      else if (colNumber === 2 || colNumber === 3) cell.alignment = { horizontal: "left" };
+      else if (colNumber === 4) cell.alignment = { horizontal: "center" };
+      else if (colNumber === 5) cell.alignment = { horizontal: "right" };
+      else if (colNumber === 6 || colNumber === 7) cell.alignment = { horizontal: "center" };
+      else {
+        cell.alignment = { horizontal: "right" };
+        cell.numFmt = numFmt;
+      }
+    });
+  });
+
+  // Footer / Totals
+  const lastDataRow = ws.rowCount;
+  
+  // Separator Row
+  const sepRow = ws.addRow([]);
+  sepRow.height = 16.5;
+  sepRow.getCell(2).value = "* * * * * * * * * * * *";
+  sepRow.getCell(2).font = { name: "Arial", size: 10, italic: true };
+
+  // Grand Total Row
+  const gtRowIndex = ws.rowCount + 1;
+  const gtVals = Array(31).fill("");
+  gtVals[1] = "GRAND TOTAL";
+  for (let c = 8; c <= 31; c++) {
+    const colLetter = ws.getColumn(c).letter;
+    gtVals[c - 1] = { formula: `SUM(${colLetter}10:${colLetter}${lastDataRow})` };
+  }
+  const gtRow = ws.addRow(gtVals);
+  gtRow.height = 16.5;
+  gtRow.eachCell((cell, colNumber) => {
+    cell.font = fontArial10Bold;
+    cell.border = medBorder;
+    if (colNumber >= 8) {
+      cell.numFmt = numFmt;
+      cell.alignment = { horizontal: "right" };
+    }
+  });
+
+  // Verification Rows
+  const v1Row = ws.addRow([]);
+  v1Row.height = 16.5;
+  v1Row.getCell(8).value = { formula: `SUM(I${gtRowIndex}:AE${gtRowIndex})` };
+  v1Row.getCell(8).font = fontArial10Bold;
+  v1Row.getCell(8).numFmt = numFmt;
+  v1Row.getCell(8).alignment = { horizontal: "right" };
+
+  const v2Row = ws.addRow([]);
+  v2Row.height = 16.5;
+  v2Row.getCell(8).value = { formula: `H${gtRowIndex} - H${gtRowIndex + 1}` };
+  v2Row.getCell(8).font = fontArial10Bold;
+  v2Row.getCell(8).numFmt = numFmt;
+  v2Row.getCell(8).alignment = { horizontal: "right" };
+
+  // Generate Buffer and Download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  window.URL.revokeObjectURL(url);
 }
 
 
