@@ -659,14 +659,16 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
             Upload Excel
           </button>
 
-          <button 
-            disabled={!rows.length} 
-            onClick={() => setIsPreviewOpen(true)}
-            className="toolbar-btn print"
-          >
-            <Printer className="h-4 w-4" />
-            Print Preview
-          </button>
+          {moduleId === "cdb" && (
+            <button 
+              disabled={!rows.length} 
+              onClick={() => setIsPreviewOpen(true)}
+              className="toolbar-btn print"
+            >
+              <Printer className="h-4 w-4" />
+              Print Preview
+            </button>
+          )}
 
           <button 
             disabled={!rows.length} 
@@ -685,22 +687,24 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
             Export Excel
           </button>
 
-          <button 
-            variant="outline" 
-            className="bg-white/5 border-white/10 text-white hover:bg-white/10" 
-            disabled={!rows.length} 
-            onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}
-          >
-            <FileText className="h-4 w-4 mr-2" /> Export PDF
-          </button>
+          {moduleId !== "cdb" && (
+            <>
+              <button 
+                className="toolbar-btn"
+                disabled={!rows.length} 
+                onClick={() => active && exportPDF({ filename: `${filenameBase}.pdf`, bookName, monthYear: active, columns: meta.columns, rows, recapSundries: recapSundriesData, recapFunds })}
+              >
+                <FileText className="h-4 w-4" /> Export PDF
+              </button>
 
-          <button 
-            variant="outline" 
-            className="bg-white/5 border-white/10 text-white hover:bg-white/10" 
-            onClick={() => active && loadRows(active)}
-          >
-            <Save className="h-4 w-4 mr-2" /> Save
-          </button>
+              <button 
+                className="toolbar-btn"
+                onClick={() => active && loadRows(active)}
+              >
+                <Save className="h-4 w-4" /> Save
+              </button>
+            </>
+          )}
         </div>
       </div>
 
