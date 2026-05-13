@@ -162,10 +162,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     };
     return {
       count: rows.length,
-      totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount), 0),
+      totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount || r.accounts_payable), 0),
       totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax || r.vat_input_tax), 0),
-      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top_10k_corp || r.itw_compensation || r.itw_at_source), 0),
-      totalItwTop10: rows.reduce((acc, r) => acc + n(r.itw_top_10t), 0),
+      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top10k || r.itw_compensation || r.itw_at_source), 0),
+      totalItwTop10: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top10k), 0),
     };
 
   }, [rows]);
@@ -186,8 +186,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     if (moduleId !== "cdb") return [];
     const map = new Map<string, { account: string; dr: number; cr: number }>();
     rows.forEach(r => {
-      if (r.sundries_acct_title) {
-        const key = r.sundries_acct_title;
+      if (r.sundries_title) {
+        const key = r.sundries_title;
         const existing = map.get(key) || { account: key, dr: 0, cr: 0 };
         existing.dr = round2(existing.dr + (Number(r.sundries_dr) || 0));
         existing.cr = round2(existing.cr + (Number(r.sundries_cr) || 0));

@@ -71,6 +71,28 @@ export function round2(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+export function createId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+export function compareStrings(a: string, b: string): number {
+  const segmentize = (s: string) =>
+    String(s ?? "").replace(/[^\w]/g, " ").trim().split(/(\d+)/).filter(Boolean).map((seg) => (/^\d+$/.test(seg) ? parseInt(seg, 10) : seg.toLowerCase()));
+  const sa = segmentize(a), sb = segmentize(b);
+  const len = Math.max(sa.length, sb.length);
+  for (let i = 0; i < len; i++) {
+    const x = sa[i] ?? "", y = sb[i] ?? "";
+    if (x === y) continue;
+    if (typeof x === "number" && typeof y === "number") return x - y;
+    return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
 export function groupMonthsByYear(mys: string[]): Record<number, string[]> {
   const sorted = sortMonthYears(mys);
   const groups: Record<number, string[]> = {};
