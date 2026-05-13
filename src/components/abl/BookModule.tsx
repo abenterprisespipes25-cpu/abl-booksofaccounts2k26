@@ -229,6 +229,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return Array.from(map.entries()).map(([account, amount]) => ({ account, amount })).sort((a, b) => a.account.localeCompare(b.account));
   }, [rows, moduleId]);
 
+  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
+
 
 
 
