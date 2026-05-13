@@ -382,7 +382,6 @@ export async function exportPDF(opts: {
     return y;
   };
 
-  const isCDB = bookName.toUpperCase().includes("CASH DISBURSEMENT");
   const splitIndex = isCDB ? columns.findIndex(c => c.header2?.includes("TOP 10K")) : -1;
 
   const renderTable = (cols: ColumnDef[], startY: number): number => {
