@@ -1,5 +1,5 @@
 {
-  "status": "error",
-  "message": "Push failed, retry 1/3...",
-  "lastSync": "2026-05-13T06:55:39.600Z"
+  "status": "syncing",
+  "message": "Detecting changes...",
+  "lastSync": "2026-05-13T06:55:46.246Z"
 }
