@@ -196,7 +196,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
   }, [rows, moduleId]);
 
-  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
+  
 
   const [uploadInfo, setUploadInfo] = useState<{ file_name: string; created_at: string } | null>(null);
 
