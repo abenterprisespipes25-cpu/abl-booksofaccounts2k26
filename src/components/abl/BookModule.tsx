@@ -196,7 +196,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
   }, [rows, moduleId]);
 
-  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
+  
 
   const [uploadInfo, setUploadInfo] = useState<{ file_name: string; created_at: string } | null>(null);
 
@@ -228,6 +228,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     });
     return Array.from(map.entries()).map(([account, amount]) => ({ account, amount })).sort((a, b) => a.account.localeCompare(b.account));
   }, [rows, moduleId]);
+
+  const recapSundriesData = moduleId === "purchase_book" ? recapSundriesPB : recapSundries;
 
 
 
@@ -346,7 +348,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         .select("month_year")
         .in("month_year", monthsInFile);
       
-      const conflictMonths = Array.from(new Set((existing ?? []).map((r: any) => r.month_year)));
+      const conflictMonths = Array.from(new Set((existing ?? []).map((r: any) => r.month_year))) as string[];
       
       if (conflictMonths.length > 0) {
         setPending({ parsed, fileName: file.name, conflictMonths });

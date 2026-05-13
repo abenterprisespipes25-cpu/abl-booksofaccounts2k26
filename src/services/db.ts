@@ -124,11 +124,11 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any }> {
     return this._execute();
   }
 
-  then<T>(
-    resolve: (value: { data: any; error: any }) => T,
-    reject?: (reason: any) => T
-  ): Promise<T> {
-    return this._execute().then(resolve, reject);
+  then<TResult1 = { data: any; error: any }, TResult2 = never>(
+    resolve?: ((value: { data: any; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    reject?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    return this._execute().then(resolve as any, reject as any);
   }
 
   private _applyFilters(rows: any[]): any[] {
@@ -285,8 +285,9 @@ class RealtimeChannel {
     this._name = name;
   }
 
-  on(event: string, filter: { schema: string; table: string }, callback: RealtimeCallback): this {
-    this._callbacks.push({ event, ...filter, callback });
+  on(event: string, filter: { schema: string; table: string; event?: string }, callback: RealtimeCallback): this {
+    const { event: filterEvent, ...rest } = filter;
+    this._callbacks.push({ event: filterEvent || event, ...rest, callback });
     return this;
   }
 

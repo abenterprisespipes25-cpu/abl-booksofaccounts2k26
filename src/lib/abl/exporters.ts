@@ -418,8 +418,8 @@ export async function exportPDF(opts: {
         }
       },
       didDrawPage: () => {
-        const pgCount = doc.internal.getNumberOfPages();
-        const cur = doc.internal.getCurrentPageInfo().pageNumber;
+        const pgCount = (doc.internal as any).getNumberOfPages();
+        const cur = (doc.internal as any).getCurrentPageInfo().pageNumber;
         const h = doc.internal.pageSize.getHeight();
         doc.setFontSize(7); doc.setFont("helvetica", "normal");
         doc.text(`Page ${cur} of ${pgCount}`, pageW / 2, h - 12, { align: "center" });
