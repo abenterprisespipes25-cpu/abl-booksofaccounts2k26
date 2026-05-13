@@ -346,7 +346,17 @@ export async function exportPDF(opts: {
   } = opts;
 
   const settings = await getCompanySettings();
-  const doc = new jsPDF({ orientation, unit: "pt", format: "a4" });
+  
+  // Set format to Legal (8.5 x 14 in) for CDB and PB, else A4
+  const isCDB = bookName.toUpperCase().includes("CASH DISBURSEMENT");
+  const isPB = bookName.toUpperCase().includes("PURCHASE BOOK");
+  const format = (isCDB || isPB) ? [612, 1008] : "a4";
+  
+  const doc = new jsPDF({ 
+    orientation: orientation || "landscape", 
+    unit: "pt", 
+    format 
+  });
   const pageW = doc.internal.pageSize.getWidth();
 
   const drawHeader = (subtitle?: string) => {
