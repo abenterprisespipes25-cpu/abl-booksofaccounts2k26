@@ -79,7 +79,7 @@ export const CDB_COLUMNS: ColumnDef[] = [
   { header: "CHECK VOUCHER NO.", header1: "CHECK", header2: "VOUCHER NO.", field: "check_voucher_no", type: "text", width: 10 },
   { header: "CHECK NO.", header1: "", header2: "CHECK NO.", field: "check_no", type: "text", width: 10 },
   { header: "FUND", header1: "", header2: "FUND", field: "fund", type: "text", width: 12 },
-  { header: "CASH AMOUNT", header1: "CASH", header2: "AMOUNT", field: "cash_amount", type: "formula", width: 12 },
+  { header: "CASH AMOUNT", header1: "CASH", header2: "AMOUNT", field: "cash_amount", type: "currency", width: 12 },
   { header: "A/P TRADE", header1: "ACCOUNTS", header2: "PAYABLE-TRADE", field: "ap_trade_dr", type: "currency", width: 12 },
   { header: "VAT INPUT TAX", header1: "VAT", header2: "INPUT TAX", field: "vat_input_tax", type: "currency", width: 12 },
   { header: "DIRECT LABOR", header1: "DIRECT", header2: "LABOR / BASIC", field: "direct_labor_basic", type: "currency", width: 12 },

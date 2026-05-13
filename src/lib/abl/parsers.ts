@@ -326,23 +326,23 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
 
     for (let i = dataStartIndex; i < rows.length; i++) {
       const row = rows[i];
-      if (!row || row.every(cell => String(cell).trim() === '')) continue;
+      if (!row) continue;
+      const acct = String(row[5] ?? '').trim();
+      if (acct === "") break; // Stop Rule: Column F empty
+
       const iso = toISODate(row[0]);
       const no = String(row[2] ?? '').trim();
       const payee = String(row[3] ?? '').trim();
-      const acct = String(row[5] ?? '').trim();
 
-      if (acct !== "") {
-        const isNewBlock = iso !== null && (no !== '' || payee !== '');
-        if (isNewBlock) {
-          if (currentGroup.length > 0) transactionGroups.push(currentGroup);
-          currentGroup = [row];
-          lastDate = iso;
-          lastNo = no;
-          lastPayee = payee;
-        } else {
-          currentGroup.push(row);
-        }
+      const isNewBlock = iso !== null && (no !== '' || payee !== '');
+      if (isNewBlock) {
+        if (currentGroup.length > 0) transactionGroups.push(currentGroup);
+        currentGroup = [row];
+        lastDate = iso;
+        lastNo = no;
+        lastPayee = payee;
+      } else {
+        currentGroup.push(row);
       }
     }
     if (currentGroup.length > 0) transactionGroups.push(currentGroup);
@@ -377,7 +377,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         payee: payee,
         particulars: mainParticulars,
         petty_cash_voucher: mainParticulars.toUpperCase().includes("PCF") ? mainParticulars.match(/PCF\s*(\S+)/i)?.[1] || mainParticulars : "",
-        check_voucher_no: mainParticulars.toUpperCase().includes("CV") ? mainParticulars.match(/CV\s*(\d+)/i)?.[0] || mainParticulars : "",
+        check_voucher_no: no,
         check_no: no,
         fund: fundLabel,
         month_year: my
@@ -386,7 +386,16 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       CDB_FIXED_FIELDS.forEach(f => baseEntry[f] = 0);
       baseEntry.vat_input_tax = 0;
       const sundries: any[] = [];
-      let computedCashAmount = 0;
+
+      let cashAmountFromFund = 0;
+      for (const r of txRows) {
+        const acct = String(r[5] ?? "").trim();
+        const cr = num(r[7]);
+        if (acct === rawFund && cr > 0) {
+          cashAmountFromFund = cr;
+          break;
+        }
+      }
 
       for (const r of txRows) {
         const acct = String(r[5] ?? '').trim();
@@ -407,11 +416,8 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
             cr: route.cr,
             sub_particulars: String(r[4] ?? "").trim() 
           });
-          computedCashAmount += route.dr || 0;
-          computedCashAmount += route.cr || 0;
         } else {
           baseEntry[route.column] = round2((baseEntry[route.column] || 0) + (route.amount || 0));
-          computedCashAmount += route.amount || 0;
         }
 
         // GL POSTING FOR THIS SUB ROW
@@ -461,14 +467,14 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         }
       }
 
-      baseEntry.cash_amount = round2(computedCashAmount);
+      baseEntry.cash_amount = cashAmountFromFund;
 
       // GL STEP 1: Credit FUND/BANK
-      if (rawFund && computedCashAmount !== 0) {
+      if (rawFund && cashAmountFromFund !== 0) {
         glEntries.push({
           month_year: my, entry_date: iso!, account_name: rawFund,
           particulars: payee, folio: folio, 
-          debit: 0, credit: Math.abs(computedCashAmount),
+          debit: 0, credit: Math.abs(cashAmountFromFund),
           source_module: 'CDB', source_ref: no
         });
       }
@@ -479,6 +485,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         sundries.forEach((s, idx) => {
           allRows.push({
             ...baseEntry,
+            cash_amount: idx === 0 ? baseEntry.cash_amount : null,
             particulars: s.sub_particulars || mainParticulars,
             sundries_acct_title: s.acct_title,
             sundries_dr: s.dr,

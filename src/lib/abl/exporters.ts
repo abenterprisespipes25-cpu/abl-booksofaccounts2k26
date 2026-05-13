@@ -94,20 +94,13 @@ export async function exportExcel(opts: {
   const DATA_START_ROW = INFO_ROWS + COL_HEADER_ROWS;
 
   // Data rows
-  for (let rIdx = 0; rIdx < rows.length; rIdx++) {
-    const r = rows[rIdx];
-    aoa.push(columns.map((c, cIdx) => {
-      if (c.type === "formula" && c.field === "cash_amount") {
-        const excelRow = DATA_START_ROW + rIdx + 1; // 1-indexed
-        return { t: 'n', f: `SUM(I${excelRow}:AE${excelRow})`, v: r[c.field] };
-      }
-      return cellValue(r, c);
-    }));
+  for (const r of rows) {
+    aoa.push(columns.map(c => cellValue(r, c)));
   }
 
   // Totals row
   const totalsRow = columns.map((c, i) => {
-    if (c.type === "currency" || c.type === "formula") {
+    if (c.type === "currency") {
       return rows.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
     }
     return i === 0 ? "TOTAL" : "";
@@ -160,7 +153,7 @@ export async function exportExcel(opts: {
       const isColHead = R >= INFO_ROWS && R < DATA_START_ROW;
       const isData    = R >= DATA_START_ROW && R < TOTAL_ROW;
       const isTotal   = R === TOTAL_ROW;
-      const isCurrency = columns[C]?.type === "currency" || columns[C]?.type === "formula";
+      const isCurrency = columns[C]?.type === "currency";
 
       if (isTitle) {
         ws[addr].s = {
@@ -379,7 +372,7 @@ export async function exportPDF(opts: {
     const head = cols.map(c => c.header2 || c.header || "");
     const body = rows.map(r =>
       cols.map(c =>
-        c.type === "currency" || c.type === "formula"
+        c.type === "currency"
           ? (r[c.field] ? fmtMoney(r[c.field]) : "")
           : c.type === "date"
           ? fmtDate(r[c.field])
@@ -387,7 +380,7 @@ export async function exportPDF(opts: {
       )
     );
     const totals = cols.map((c, i) => {
-      if (c.type === "currency" || c.type === "formula") {
+      if (c.type === "currency") {
         const s = rows.reduce((acc, r) => acc + (Number(r[c.field]) || 0), 0);
         return s !== 0 ? fmtMoney(s) : "";
       }
@@ -398,7 +391,7 @@ export async function exportPDF(opts: {
     const colStyles: Record<number, any> = {};
     cols.forEach((c, i) => {
       colStyles[i] = {
-        halign: (c.type === "currency" || c.type === "formula") ? "right" : "left",
+        halign: c.type === "currency" ? "right" : "left",
         cellWidth: isCDB ? (c.width ? c.width * 6 : 36) : "auto",
       };
     });

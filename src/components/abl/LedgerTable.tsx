@@ -4,7 +4,7 @@ import { fmtDate, fmtMoney } from "@/lib/abl/format";
 
 /* ───── cell formatter (read-only) ───── */
 const fmtCell = (val: any, type: string) => {
-  if (type === "currency" || type === "formula") {
+  if (type === "currency") {
     const n = Number(val);
     if (!val || n === 0) return "";
     return fmtMoney(n);
@@ -90,7 +90,7 @@ export function LedgerTable({
   // Totals
   const totals: Record<string, number> = {};
   for (const c of columns) {
-    if (c.type === "currency" || c.type === "formula") {
+    if (c.type === "currency") {
       totals[c.field] = filtered.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
     }
   }
@@ -258,7 +258,7 @@ export function LedgerTable({
                   <th key={i} style={{
                     ...TH_STYLE,
                     minWidth: hasDoubleHeaders ? `${(c.width || 10) * 8}px` : `${c.width || 80}px`,
-                    textAlign: (c.type === "currency" || c.type === "formula") ? "right" : "left",
+                    textAlign: c.type === "currency" ? "right" : "left",
                   }}>
                     {hasDoubleHeaders ? (c.header2 ?? c.header) : c.header}
                   </th>
@@ -301,23 +301,23 @@ export function LedgerTable({
                     {/* Data cells */}
                     {columns.map((c, ci) => {
                       const val = isEditing ? (editData[c.field] ?? r[c.field]) : r[c.field];
-                      const isEmpty = (c.type === "currency" || c.type === "formula") && (!val || Number(val) === 0);
-                      const align = (c.type === "currency" || c.type === "formula") ? "right" : "left";
+                      const isEmpty = c.type === "currency" && (!val || Number(val) === 0);
+                      const align = c.type === "currency" ? "right" : "left";
 
                       if (isEditing) {
                         return (
                           <td key={ci} style={{ ...TD(align, r._is_sub_row), background: "#fefce8", padding: "2px 4px" }}>
                             <input
-                              type={(c.type === "currency" || c.type === "formula") ? "number" : c.type === "date" ? "date" : "text"}
+                              type={c.type === "currency" ? "number" : c.type === "date" ? "date" : "text"}
                               value={c.type === "date"
                                 ? (editData[c.field] ?? r[c.field] ?? "").toString().substring(0, 10)
                                 : (editData[c.field] ?? r[c.field] ?? "")}
-                              onChange={e => setEditData(prev => ({ ...prev, [c.field]: (c.type === "currency" || c.type === "formula") ? parseFloat(e.target.value) || 0 : e.target.value }))}
+                              onChange={e => setEditData(prev => ({ ...prev, [c.field]: c.type === "currency" ? parseFloat(e.target.value) || 0 : e.target.value }))}
                               style={{
                                 width: "100%", border: "1px solid #93c5fd", borderRadius: 4,
                                 padding: "2px 6px", fontSize: "0.75rem", textAlign: align,
                                 background: "#fff", outline: "none",
-                                minWidth: (c.type === "currency" || c.type === "formula") ? 80 : c.type === "date" ? 110 : 120,
+                                minWidth: c.type === "currency" ? 80 : c.type === "date" ? 110 : 120,
                               }}
                             />
                           </td>
@@ -325,7 +325,7 @@ export function LedgerTable({
                       }
                       return (
                         <td key={ci} style={TD(align, r._is_sub_row)}>
-                          {(c.type === "currency" || c.type === "formula")
+                          {c.type === "currency"
                             ? (isEmpty ? "" : fmtCell(val, "currency"))
                             : fmtCell(val, c.type)}
                         </td>
@@ -341,8 +341,8 @@ export function LedgerTable({
                 <tr>
                   {hasActions && <td style={{ ...TFOOT, textAlign: "left" }}></td>}
                   {columns.map((c, i) => (
-                    <td key={i} style={{ ...TFOOT, textAlign: (c.type === "currency" || c.type === "formula") ? "right" : i === 0 ? "left" : "center" }}>
-                      {(c.type === "currency" || c.type === "formula")
+                    <td key={i} style={{ ...TFOOT, textAlign: c.type === "currency" ? "right" : i === 0 ? "left" : "center" }}>
+                      {c.type === "currency"
                         ? (totals[c.field] ? fmtMoney(totals[c.field]) : "")
                         : i === 0 ? "TOTAL" : ""}
                     </td>
