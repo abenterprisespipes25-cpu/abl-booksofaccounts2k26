@@ -230,16 +230,99 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
+  const fundAccounts = [
+    "CIB:BDO Admin", "CIB:BDO Plant", "CIB:BDO ATSA", "CIB:BDO Dollar Savings",
+    "CIB:Eastwest", "CIB:Eastwest Dollar Savings", "CIB:LBP", "CIB:LBP DOST",
+    "COH:Petty Cash Fund - ASTL Plant", "COH:Petty Cash Fund - ASTL Construction",
+    "COH:Petty Cash Fund - Leonilo Acuña", "COH:Petty Cash Fund - Michael White",
+    "COH:Petty Cash Fund - Vanessa Anne Duce", "COH:Revolving Fund - Office"
+  ];
+
+  function detectFund(subRows: any[]) {
+    for (const row of subRows) {
+      const account = String(row[5] ?? "").trim();
+      if (!account) continue;
+      if (
+        fundAccounts.includes(account) ||
+        account.startsWith("CIB:") ||
+        account.startsWith("COH:")
+      ) return account;
+    }
+    return "";
+  }
+
+  function detectCashAmount(subRows: any[]) {
+    for (const row of subRows) {
+      const account = String(row[5] ?? "").trim();
+      const credit = num(row[7]);
+      if (
+        account &&
+        (fundAccounts.includes(account) ||
+         account.startsWith("CIB:") ||
+         account.startsWith("COH:"))
+      ) {
+        if (credit > 0) return credit;
+      }
+    }
+    return 0;
+  }
+
+  function routeAccount(accountName: string, debit: number, credit: number) {
+    if (accountName.startsWith("CIB:") || accountName.startsWith("COH:")) {
+      return { column: "SUNDRIES", acct_title: accountName, dr: credit || 0, cr: 0 };
+    }
+    const mapping = CDB_FIXED_MAPPING[accountName];
+    if (mapping && !mapping.match_type) {
+      return { column: mapping.field, amount: debit || credit };
+    }
+    for (const [key, val] of Object.entries(CDB_FIXED_MAPPING)) {
+      if (val.match_type === 'startswith' && accountName.startsWith(key)) {
+        return { column: val.field, amount: debit || credit };
+      }
+    }
+    return { column: 'SUNDRIES', acct_title: accountName, dr: debit || 0, cr: credit || 0 };
+  }
+
+  function classifyAccount(accountName: string) {
+    const name = accountName.toLowerCase();
+    if (name.startsWith("cib:") || name.startsWith("coh:")) return "ASSET";
+    if (name.includes("payable") && !name.includes("accounts payable")) return "LIABILITY";
+    if (name.includes("accounts payable")) return "LIABILITY";
+    if (name.includes("input vat") || name.includes("input tax")) return "ASSET";
+    if (name.includes("withholding") || name.includes("tax payable")) return "LIABILITY";
+    if (name.includes("sss") || name.includes("phic") || name.includes("hdmf")) return "LIABILITY";
+    if (
+      name.includes("expense") || name.includes("cost of") ||
+      name.includes("selling") || name.includes("general and admin") ||
+      name.includes("salaries") || name.includes("wages") ||
+      name.includes("outside services") || name.includes("travel") ||
+      name.includes("delivery") || name.includes("communication") ||
+      name.includes("light & water") || name.includes("repairs") ||
+      name.includes("supplies") || name.includes("miscellaneous") ||
+      name.includes("rent") || name.includes("taxes") ||
+      name.includes("professional fees") || name.includes("advertising") ||
+      name.includes("commission") || name.includes("fuel") ||
+      name.includes("materials") || name.includes("overhead") ||
+      name.includes("direct labor") || name.includes("construction")
+    ) return "EXPENSE";
+    if (
+      name.includes("prepaid") || name.includes("advances") ||
+      name.includes("receivable") || name.includes("inventory") ||
+      name.includes("property") || name.includes("equipment") ||
+      name.includes("recoverable") || name.includes("deposits") ||
+      name.includes("land")
+    ) return "ASSET";
+    return "EXPENSE";
+  }
+
   for (const name of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
     if (h < 0) continue;
     const dataStartIndex = h + 1;
     
-    // Step 2: Group rows by transaction (Date + No. + Name)
     const transactionGroups: any[][] = [];
     let currentGroup: any[] = [];
-    
     let lastDate: string | null = null;
     let lastNo = "";
     let lastPayee = "";
@@ -247,16 +330,13 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     for (let i = dataStartIndex; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.every(cell => String(cell).trim() === '')) continue;
-
       const iso = toISODate(row[0]);
       const no = String(row[2] ?? '').trim();
       const payee = String(row[3] ?? '').trim();
       const acct = String(row[5] ?? '').trim();
 
       if (acct !== "") {
-        // If we see a new Date+No+Payee, it's a new transaction block
         const isNewBlock = iso !== null && (no !== '' || payee !== '');
-        
         if (isNewBlock) {
           if (currentGroup.length > 0) transactionGroups.push(currentGroup);
           currentGroup = [row];
@@ -270,7 +350,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     }
     if (currentGroup.length > 0) transactionGroups.push(currentGroup);
 
-    // Step 3-4: Process each transaction
     for (const txRows of transactionGroups) {
       const firstRow = txRows[0];
       const iso = toISODate(firstRow[0]) || lastDate;
@@ -280,96 +359,113 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       if (!detectedMonthYear) detectedMonthYear = my;
       const folio = folioFor("CDB", my);
 
-      // Main row info
-      let cashAmount = 0;
-      let fundAccount = "";
-      let particulars = "";
+      const rawFund = detectFund(txRows);
+      const fundLabel = mapFund(rawFund);
+      const cashAmount = detectCashAmount(txRows);
 
-      // Look for the "Main Row" (the one with the Credit in Col H)
+      let mainParticulars = "";
       for (const r of txRows) {
+        const acct = String(r[5] ?? "").trim();
         const cr = num(r[7]);
-        if (cr > 0) {
-          cashAmount = cr;
-          fundAccount = String(r[5] ?? '').trim();
-          particulars = String(r[4] ?? '').trim(); // Part 1: Column E
+        if (acct === rawFund && cr > 0) {
+          mainParticulars = String(r[4] ?? "").trim();
+          break;
         }
       }
-      
-      // Fallback for particulars
-      if (!particulars) particulars = String(firstRow[4] ?? '').trim();
+      if (!mainParticulars) mainParticulars = String(firstRow[4] ?? "").trim();
 
       const entryId = crypto.randomUUID();
       const baseEntry: any = {
         id: entryId,
         entry_date: iso,
         payee: payee,
-        particulars: particulars,
-        petty_cash_voucher: particulars.toUpperCase().includes("PCF") ? particulars.match(/PCF\s*(\S+)/i)?.[1] || particulars : "",
-        check_voucher_no: particulars.toUpperCase().includes("CV") ? particulars.match(/CV\s*(\d+)/i)?.[0] || particulars : "",
+        particulars: mainParticulars,
+        petty_cash_voucher: mainParticulars.toUpperCase().includes("PCF") ? mainParticulars.match(/PCF\s*(\S+)/i)?.[1] || mainParticulars : "",
+        check_voucher_no: mainParticulars.toUpperCase().includes("CV") ? mainParticulars.match(/CV\s*(\d+)/i)?.[0] || mainParticulars : "",
         check_no: no,
-        fund: mapFund(fundAccount),
+        fund: fundLabel,
         cash_amount: cashAmount,
         month_year: my
       };
 
-      // Map categories
       CDB_FIXED_FIELDS.forEach(f => baseEntry[f] = 0);
       baseEntry.vat_input_tax = 0;
       const sundries: any[] = [];
+
+      // GL STEP 1: Credit FUND/BANK
+      if (rawFund && cashAmount > 0) {
+        glEntries.push({
+          month_year: my, entry_date: iso!, account_name: rawFund,
+          particulars: payee, folio: folio, debit: 0, credit: cashAmount,
+          source_module: 'CDB', source_ref: no
+        });
+      }
 
       for (const r of txRows) {
         const acct = String(r[5] ?? '').trim();
         const dr = num(r[6]);
         const cr = num(r[7]);
+        if (!acct) continue;
 
-        // GL Entry for every split
-        glEntries.push({
-          month_year: my, entry_date: iso!, account_name: acct,
-          particulars: payee, folio: folio, debit: dr, credit: cr,
-          source_module: 'CDB', source_ref: no
-        });
-
-        // Skip the main FUND account itself from being distributed to fixed columns or sundries
-        // because it is already captured in the 'FUND' and 'CASH AMOUNT' columns.
-        if (acct === fundAccount && cr > 0) {
-          continue;
-        }
-
-        let mapped = false;
-        
-        // Critical Rule: Input VAT on credit side goes to SUNDRIES
-        if (acct === "Input VAT" && cr > 0) {
-          mapped = false;
-        } else {
-          const mapping = CDB_FIXED_MAPPING[acct];
-          if (mapping) {
-            const isCreditField = CREDIT_FIELDS_CDB.has(mapping.field);
-            const amt = isCreditField ? cr : dr;
-            baseEntry[mapping.field] = round2((baseEntry[mapping.field] || 0) + amt);
-            mapped = true;
-          } else {
-            for (const [key, val] of Object.entries(CDB_FIXED_MAPPING)) {
-              if (val.match_type === 'startswith' && acct.startsWith(key)) {
-                baseEntry[val.field] = round2((baseEntry[val.field] || 0) + dr);
-                mapped = true;
-                break;
-              }
-            }
+        // Route Account
+        const route = routeAccount(acct, dr, cr);
+        if (route.column === "SUNDRIES") {
+          // Exclude main fund from sundries unless it has a debit? The user said fund accounts -> SUNDRIES but with dr: credit, cr: 0. Wait, user specifically said:
+          // "Fund/Bank accounts -> SUNDRIES if (accountName?.startsWith("CIB:") || accountName?.startsWith("COH:")) { return { column:"SUNDRIES", acct_title: accountName, dr: credit || 0, cr: 0 }; }"
+          // But wait! User also said: "Skip the main FUND account itself from being distributed to fixed columns or sundries because it is already captured in the 'FUND' and 'CASH AMOUNT' columns."
+          // Wait, the routing logic they provided says:
+          // `if (accountName?.startsWith("CIB:") || accountName?.startsWith("COH:")) { return { column:"SUNDRIES", acct_title: accountName, dr: credit || 0, cr: 0 }; }`
+          // If we include it in sundries with `dr = credit`, it will double count?
+          // Let's stick to user's exact "ROUTING LOGIC" but with their explicit rule: "Fund/Bank accounts → SUNDRIES".
+          // Actually, if we do that, we get sundries dr = credit. Let's see if we should skip the exact matching `fundAccount` with `cr > 0`.
+          // "CASH AMOUNT = Col H Credit of fund/bank row only"
+          // "ALL other accounts -> SUNDRIES"
+          // Let's implement the routing as specified.
+          
+          if (acct === rawFund && cr === cashAmount && cr > 0) {
+            // Usually we skip the main credit row from being re-added to sundries, to balance the sheet!
+            // I will skip it to maintain balance.
+            continue;
           }
+
+          sundries.push({ 
+            acct_title: route.acct_title, 
+            dr: route.dr, 
+            cr: route.cr,
+            sub_particulars: String(r[4] ?? "").trim() 
+          });
+        } else {
+          baseEntry[route.column] = round2((baseEntry[route.column] || 0) + (route.amount || 0));
         }
 
-        if (!mapped) {
-          sundries.push({ acct_title: acct, dr, cr });
+        // GL STEP 2: Post each sub-row
+        if (acct !== rawFund || cr !== cashAmount) {
+          const accountType = classifyAccount(acct);
+          const isDebitSide = (
+            accountType === "EXPENSE" ||
+            accountType === "ASSET" ||
+            (accountType === "LIABILITY" && dr > 0)
+          );
+          
+          const rowParticulars = String(r[4] ?? "").trim() || mainParticulars;
+
+          glEntries.push({
+            month_year: my, entry_date: iso!, account_name: acct,
+            particulars: rowParticulars, folio: folio, 
+            debit: isDebitSide ? (dr || 0) : 0, 
+            credit: isDebitSide ? 0 : (cr || 0),
+            source_module: 'CDB', source_ref: no
+          });
         }
       }
 
-      // Create final data rows
       if (sundries.length === 0) {
         allRows.push(baseEntry);
       } else {
         sundries.forEach((s, idx) => {
           allRows.push({
             ...baseEntry,
+            particulars: s.sub_particulars || mainParticulars,
             sundries_acct_title: s.acct_title,
             sundries_dr: s.dr,
             sundries_cr: s.cr,
@@ -380,7 +476,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     }
   }
 
-  // Final Sort: Date ASC, CV No. ASC
   allRows.sort((a, b) => {
     const d = a.entry_date.localeCompare(b.entry_date);
     if (d !== 0) return d;

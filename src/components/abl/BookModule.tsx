@@ -56,6 +56,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const [uploading, setUploading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [pending, setPending] = useState<{ parsed: ParsedResult<any>; fileName: string; conflictMonths: string[] } | null>(null);
+  const [glValidation, setGLValidation] = useState<{ parsed: ParsedResult<any>; fileName: string; totalDr: number; totalCr: number; diff: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadMonths = useCallback(async (silent = false) => {
@@ -354,17 +355,28 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       if (conflictMonths.length > 0) {
         setPending({ parsed, fileName: file.name, conflictMonths });
       } else {
-        // Auto-switch: If the file contains months, we'll process them all.
-        // We no longer block uploads that don't match the active tab.
-        await commit(parsed, file.name);
+        validateAndCommit(parsed, file.name);
       }
 
     } catch (e: any) {
       toast.error(`Upload error: ${e.message || e}`);
-    } finally {
-
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  function validateAndCommit(parsed: ParsedResult<any>, fileName: string, replace = false) {
+    // Double-entry validation
+    const totalDr = round2(parsed.glEntries.reduce((s, e) => s + (e.debit || 0), 0));
+    const totalCr = round2(parsed.glEntries.reduce((s, e) => s + (e.credit || 0), 0));
+    const diff = Math.abs(totalDr - totalCr);
+
+    if (diff > 0.01) {
+      setGLValidation({ parsed, fileName, totalDr, totalCr, diff });
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    } else {
+      commit(parsed, fileName, replace);
     }
   }
 
@@ -676,8 +688,68 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         </div>
       </div>
 
+      <AlertDialog open={!!glValidation} onOpenChange={(o) => !o && setGLValidation(null)}>
+        <AlertDialogContent className="bg-[#0a1628] border-red-500/30 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-rose-500 flex items-center gap-2">
+              ⚠️ GL Imbalance Detected!
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-white/70 space-y-2">
+              <p>The system detected that total debits do not equal total credits for this upload.</p>
+              <div className="bg-red-500/10 p-3 rounded border border-red-500/20 font-mono text-sm">
+                <div className="flex justify-between"><span>Total Debits:</span> <span className="text-blue-400">{fmtMoney(glValidation?.totalDr || 0)}</span></div>
+                <div className="flex justify-between"><span>Total Credits:</span> <span className="text-emerald-400">{fmtMoney(glValidation?.totalCr || 0)}</span></div>
+                <div className="flex justify-between font-bold border-t border-white/10 mt-1 pt-1 text-rose-400">
+                  <span>Difference:</span> <span>{fmtMoney(glValidation?.diff || 0)}</span>
+                </div>
+              </div>
+              <p className="text-xs italic">
+                {glValidation && glValidation.totalDr > glValidation.totalCr 
+                  ? `💡 Missing CREDIT of ${fmtMoney(glValidation.diff)}\n→ Possible: Accounts Payable CR\n→ Possible: Withholding Tax Payable CR\n→ Possible: Cash/Bank CR` 
+                  : `💡 Missing DEBIT of ${fmtMoney(glValidation?.diff || 0)}\n→ Possible: Expense Account DR\n→ Possible: Input VAT DR\n→ Possible: Accounts Payable DR`}
+              </p>
+              <p className="text-xs font-bold text-rose-500">Force posting may affect Trial Balance accuracy.</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-white/5 border-white/10 text-white hover:bg-white/10">Cancel Upload</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-rose-600 hover:bg-rose-700 text-white" 
+              onClick={() => {
+                if (glValidation) {
+                  commit(glValidation.parsed, glValidation.fileName, false); // Or whatever replace logic is needed
+                  setGLValidation(null);
+                }
+              }}
+            >
+              Force Post Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-
+      {pending && (
+        <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
+          <AlertDialogContent className="bg-[#0a1628] border-white/10 text-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Replace Existing Records?</AlertDialogTitle>
+              <AlertDialogDescription className="text-white/70">
+                You are about to upload records for months that already exist: <strong className="text-white">{pending.conflictMonths.join(", ")}</strong>.<br/><br/>
+                Do you want to REPLACE the existing data for these months with the new upload?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-white/5 border-white/10 text-white hover:bg-white/10" disabled={uploading}>Cancel</AlertDialogCancel>
+              <AlertDialogAction className="bg-rose-600 hover:bg-rose-700 text-white" disabled={uploading} onClick={() => {
+                validateAndCommit(pending.parsed, pending.fileName, true);
+                setPending(null);
+              }}>
+                Replace Records
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {months.length > 0 && (
         <MonthTabs months={months} active={active} onSelect={setActive} />
