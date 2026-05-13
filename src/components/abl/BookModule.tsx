@@ -346,7 +346,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         .select("month_year")
         .in("month_year", monthsInFile);
       
-      const conflictMonths = Array.from(new Set((existing ?? []).map((r: any) => r.month_year)));
+      const conflictMonths = Array.from(new Set((existing ?? []).map((r: any) => r.month_year))) as string[];
       
       if (conflictMonths.length > 0) {
         setPending({ parsed, fileName: file.name, conflictMonths });
