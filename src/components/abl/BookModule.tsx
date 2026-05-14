@@ -59,6 +59,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const [pending, setPending] = useState<{ parsed: ParsedResult<any>; fileName: string; conflictMonths: string[] } | null>(null);
   const [glValidation, setGLValidation] = useState<{ parsed: ParsedResult<any>; fileName: string; totalDr: number; totalCr: number; diff: number } | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [cdbValidationReport, setCdbValidationReport] = useState<{ parsed: ParsedResult<any>; fileName: string; replace: boolean; diff: number; totalDr: number; totalCr: number } | null>(null);
   const [companySettings, setCompanySettings] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -377,6 +378,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     const totalDr = round2(parsed.glEntries.reduce((s, e) => s + (e.debit || 0), 0));
     const totalCr = round2(parsed.glEntries.reduce((s, e) => s + (e.credit || 0), 0));
     const diff = Math.abs(totalDr - totalCr);
+
+    if (moduleId === "cdb" && parsed.validation) {
+      setCdbValidationReport({ parsed, fileName, replace, diff, totalDr, totalCr });
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
 
     if (diff > 0.01) {
       setGLValidation({ parsed, fileName, totalDr, totalCr, diff });
@@ -716,6 +724,187 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         monthYear={active || ""}
       />
 
+      {cdbValidationReport && (() => {
+        const { parsed, fileName, totalDr, totalCr, diff, replace } = cdbValidationReport;
+        const v = parsed.validation;
+        const isDrBalanced = Math.abs(v.source_total_debit - v.routed_total_debit) <= 0.01;
+        const isCrBalanced = Math.abs(v.source_total_credit - v.routed_total_credit) <= 0.01;
+        const isGLBalanced = diff <= 0.01;
+        const isRowsMatched = v.source_rows === v.routed_rows;
+        const allChecksPassed = isDrBalanced && isCrBalanced && isGLBalanced && isRowsMatched;
+        
+        let issuesCount = 0;
+        if (!isDrBalanced) issuesCount++;
+        if (!isCrBalanced) issuesCount++;
+        if (!isGLBalanced) issuesCount++;
+        if (!isRowsMatched) issuesCount++;
+
+        return (
+          <div className="fixed inset-0 z-[9999] bg-black/85 flex items-center justify-center p-4">
+            <div className="validation-report w-full overflow-y-auto max-h-[90vh]">
+              <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
+                <div className="font-bold text-lg text-white">📊 UPLOAD VALIDATION REPORT</div>
+                <button onClick={() => setCdbValidationReport(null)} className="text-white/50 hover:text-white"><X size={20} /></button>
+              </div>
+              <div className="text-white/70 mb-4">
+                File: {fileName}<br/>
+                Processed: {new Date().toLocaleString()}
+              </div>
+
+              <div className="report-section">
+                <div className="report-title">ROWS</div>
+                <div className="amount-row"><span>Source rows:</span> <span>{v.source_rows}</span></div>
+                <div className="amount-row"><span>Processed rows:</span> <span>{v.routed_rows}</span></div>
+                <div className="mt-1">{isRowsMatched ? <span className="check-pass">✅ All rows accounted for</span> : <span className="check-fail">⚠️ Row count mismatch! Missing: {v.source_rows - v.routed_rows}</span>}</div>
+              </div>
+
+              <div className="report-section">
+                <div className="report-title">SOURCE FILE TOTALS (Col G & H)</div>
+                <div className="amount-row"><span>Total Debit (Col G):</span> <span>₱ {fmtMoney(v.source_total_debit)}</span></div>
+                <div className="amount-row"><span>Total Credit (Col H):</span> <span>₱ {fmtMoney(v.source_total_credit)}</span></div>
+              </div>
+
+              <div className="report-section">
+                <div className="report-title">CDB DISTRIBUTION TOTALS (Cols I-AE)</div>
+                <div className="amount-row"><span>Total Routed Debit:</span> <span>₱ {fmtMoney(v.routed_total_debit)}</span></div>
+                <div className="amount-row"><span>Total Routed Credit:</span> <span>₱ {fmtMoney(v.routed_total_credit)}</span></div>
+                <div className="mt-1">
+                  <div>Debit Check: {isDrBalanced ? <span className="check-pass">✅ Balanced</span> : <span className="check-fail">⚠️ Difference ₱{fmtMoney(Math.abs(v.source_total_debit - v.routed_total_debit))}</span>}</div>
+                  <div>Credit Check: {isCrBalanced ? <span className="check-pass">✅ Balanced</span> : <span className="check-fail">⚠️ Difference ₱{fmtMoney(Math.abs(v.source_total_credit - v.routed_total_credit))}</span>}</div>
+                </div>
+              </div>
+
+              <div className="report-section">
+                <div className="report-title">GENERAL LEDGER DOUBLE-ENTRY CHECK</div>
+                <div className="amount-row"><span>GL Total Debit:</span> <span>₱ {fmtMoney(totalDr)}</span></div>
+                <div className="amount-row"><span>GL Total Credit:</span> <span>₱ {fmtMoney(totalCr)}</span></div>
+                <div className="mt-1">
+                  Balance: {isGLBalanced ? <span className="check-pass">✅ DR = CR</span> : <span className="check-fail">⚠️ Difference ₱{fmtMoney(diff)}</span>}
+                </div>
+                {!isGLBalanced && (
+                  <div className="mt-2 p-2 bg-black/30 rounded text-white/80">
+                    {totalDr > totalCr ? (
+                      <>
+                        <div className="text-[#00aaff] font-bold">💡 Missing CREDIT of ₱{fmtMoney(diff)}</div>
+                        <div>→ Check: Withholding Tax Payable</div>
+                        <div>→ Check: Accounts Payable</div>
+                        <div>→ Check: Cash/Bank (CIB/COH) credit entry</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-[#00aaff] font-bold">💡 Missing DEBIT of ₱{fmtMoney(diff)}</div>
+                        <div>→ Check: Expense account debit entry</div>
+                        <div>→ Check: Input VAT debit entry</div>
+                        <div>→ Check: Accounts Payable debit entry</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="report-section">
+                <div className="report-title">COLUMN COVERAGE</div>
+                <div className="grid grid-cols-2 gap-x-8">
+                  {Object.entries(v.column_coverage).map(([col, amt]) => (
+                    <div key={col} className="amount-row"><span>{col}:</span> <span>₱ {fmtMoney(Number(amt))}</span></div>
+                  ))}
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/10 amount-row font-bold text-white">
+                  <span>CASH AMOUNT TOTAL (SUM I-AE):</span> 
+                  <span>₱ {fmtMoney(parsed.rows.reduce((s: any, r: any) => s + (Number(r.cash_amount) || 0), 0))}</span>
+                </div>
+              </div>
+
+              {v.unrouted_entries.length > 0 && (
+                <div className="report-section">
+                  <div className="report-title text-orange-400">UNROUTED ENTRIES (→ SUNDRIES)</div>
+                  <div className="max-h-32 overflow-y-auto pr-2">
+                    {v.unrouted_entries.map((u: any, i: number) => (
+                      <div key={i} className="amount-row text-white/60">
+                        <span className="truncate mr-4">{u.account}</span>
+                        <span>₱{fmtMoney(u.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="report-section border-none mb-4">
+                <div className="report-title">OVERALL STATUS</div>
+                {allChecksPassed ? (
+                  <div className="check-pass text-sm">✅ ALL CHECKS PASSED — Safe to save</div>
+                ) : (
+                  <div className="check-fail text-sm">⚠️ {issuesCount} ISSUES FOUND — Review before saving</div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-white/10">
+                <button 
+                  onClick={() => {
+                    setCdbValidationReport(null);
+                    commit(parsed, fileName, replace);
+                  }}
+                  disabled={!allChecksPassed}
+                  className="save-btn"
+                >
+                  💾 Save to System
+                </button>
+                
+                {!allChecksPassed && (
+                  <button 
+                    onClick={() => {
+                      if(confirm("⚠️ Saving with imbalance may affect Trial Balance and GL accuracy. Proceed?")) {
+                        setCdbValidationReport(null);
+                        commit(parsed, fileName, replace);
+                      }
+                    }}
+                    className="save-btn border-orange-500/50 text-orange-500 hover:bg-orange-500/20"
+                  >
+                    ⚠️ Force Save Anyway
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => setCdbValidationReport(null)}
+                  className="cancel-btn"
+                >
+                  ❌ Cancel Upload
+                </button>
+
+                <button 
+                  onClick={() => {
+                    let content = \`CDB UPLOAD VALIDATION REPORT\\n================================\\n\`;
+                    content += \`File: \${fileName}\\nDate Processed: \${new Date().toLocaleString()}\\nMonth Tab: \${parsed.monthYear}\\n\\n\`;
+                    content += \`ROWS\\nSource rows:    \${v.source_rows}\\nProcessed rows: \${v.routed_rows}\\nStatus: \${isRowsMatched ? 'PASS' : 'FAIL'}\\n\\n\`;
+                    content += \`SOURCE TOTALS\\nCol G (Debit) Total:  ₱\${fmtMoney(v.source_total_debit)}\\nCol H (Credit) Total: ₱\${fmtMoney(v.source_total_credit)}\\n\\n\`;
+                    content += \`CDB DISTRIBUTION TOTALS\\nTotal Routed Debit:   ₱\${fmtMoney(v.routed_total_debit)}\\nTotal Routed Credit:  ₱\${fmtMoney(v.routed_total_credit)}\\n\`;
+                    content += \`Debit Match:   \${isDrBalanced ? 'PASS' : 'FAIL'} (diff: ₱\${fmtMoney(Math.abs(v.source_total_debit - v.routed_total_debit))})\\n\`;
+                    content += \`Credit Match:  \${isCrBalanced ? 'PASS' : 'FAIL'} (diff: ₱\${fmtMoney(Math.abs(v.source_total_credit - v.routed_total_credit))})\\n\\n\`;
+                    content += \`GL DOUBLE-ENTRY CHECK\\nGL Total Debit:  ₱\${fmtMoney(totalDr)}\\nGL Total Credit: ₱\${fmtMoney(totalCr)}\\nBalance: \${isGLBalanced ? 'PASS' : 'FAIL'} (diff: ₱\${fmtMoney(diff)})\\n\\n\`;
+                    content += \`COLUMN BREAKDOWN\\n\`;
+                    Object.entries(v.column_coverage).forEach(([col, amt]) => { content += \`\${col} : ₱\${fmtMoney(Number(amt))}\\n\`; });
+                    content += \`\\nSUNDRIES / UNROUTED ENTRIES\\n\`;
+                    v.unrouted_entries.forEach((u: any) => { content += \`\${u.account} : ₱\${fmtMoney(u.amount)} → SUNDRIES\\n\`; });
+                    content += \`\\nOVERALL: \${allChecksPassed ? 'ALL CHECKS PASSED' : 'ISSUES FOUND'}\\n\`;
+                    
+                    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = \`CDB_Validation_\${parsed.monthYear.replace(/\\s+/g, "_")}.txt\`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-4 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/30 transition-all ml-auto font-bold"
+                >
+                  📥 Download Report
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <style dangerouslySetInnerHTML={{ __html: `
         .toolbar-btn {
           background: rgba(255,255,255,0.08);
@@ -755,6 +944,78 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           background: rgba(255,165,0,0.15);
           border-color: rgba(255,165,0,0.3);
           color: #ffa500;
+        }
+
+        .validation-report {
+          background: rgba(0, 0, 0, 0.6);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 12px;
+          backdrop-filter: blur(16px);
+          padding: 20px;
+          margin-top: 16px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 0.72rem;
+          color: rgba(255, 255, 255, 0.85);
+          max-width: 700px;
+        }
+
+        .report-section {
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+          padding: 10px 0;
+        }
+
+        .report-title {
+          font-weight: 700;
+          font-size: 0.75rem;
+          color: #00aaff;
+          letter-spacing: 0.06em;
+          margin-bottom: 8px;
+        }
+
+        .check-pass {
+          color: #00c864;
+          font-weight: 600;
+        }
+
+        .check-fail {
+          color: #ff4444;
+          font-weight: 600;
+        }
+
+        .check-warn {
+          color: #ffa500;
+          font-weight: 600;
+        }
+
+        .amount-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 2px 0;
+        }
+
+        .save-btn {
+          background: rgba(0,200,100,0.2);
+          border: 1px solid rgba(0,200,100,0.4);
+          color: #00c864;
+          border-radius: 8px;
+          padding: 10px 20px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .save-btn:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        .cancel-btn {
+          background: rgba(255,68,68,0.15);
+          border: 1px solid rgba(255,68,68,0.3);
+          color: #ff4444;
+          border-radius: 8px;
+          padding: 10px 20px;
+          font-weight: 700;
+          cursor: pointer;
         }
       `}} />
 
