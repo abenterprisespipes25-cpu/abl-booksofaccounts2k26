@@ -1,2 +1,2 @@
-import PurchaseBookModule from "@/components/abl/PurchaseBookModule";
-export default function PurchaseBookPage() { return <PurchaseBookModule />; }
+import BookModule from "@/components/abl/BookModule";
+export default function PurchaseBookPage() { return <BookModule moduleId="purchase_book" />; }
