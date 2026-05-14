@@ -357,7 +357,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       const parsed = await PARSERS[moduleId](buf);
       const monthsInFile = Array.from(new Set(parsed.rows.map((r: any) => r.month_year))).filter(Boolean) as string[];
       
-      if (!monthsInFile.length) throw new Error("No valid transactions found in file.");
+      if (!monthsInFile.length) throw new Error("0 accounting transactions detected after parsing.");
       
       const { data: existing } = await supabase
         .from(meta.tableName)
@@ -469,11 +469,13 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         } as any);
       }
 
-      if (moduleId === "cdb" && parsed.validation) {
-        toast.success(`✅ ${parsed.rows.length} entries saved for ${targetMonth}\nGL: ₱${fmtMoney(parsed.validation.gl_total_debit)} DR = ₱${fmtMoney(parsed.validation.gl_total_credit)} CR ✅ Balanced`, { id: loaderId, duration: 5000 });
-      } else {
-        toast.success(`✅ ${meta.label} updated successfully! ${parsed.rows.length} new entries added for ${targetMonth}`, { id: loaderId });
-      }
+      const totalDr = round2(parsed.glEntries.reduce((s, e) => s + (e.debit || 0), 0));
+      const totalCr = round2(parsed.glEntries.reduce((s, e) => s + (e.credit || 0), 0));
+      
+      toast.success(`✅ Upload Successful\n${parsed.rows.length} rows parsed\nDebit Total: ₱${totalDr.toLocaleString()}\nCredit Total: ₱${totalCr.toLocaleString()}`, { 
+        id: loaderId,
+        duration: 6000 
+      });
       
       // Invalidate cache for all uploaded months so fresh data is loaded next visit
       monthsInFile.forEach(my => invalidateCache(moduleId, my));
