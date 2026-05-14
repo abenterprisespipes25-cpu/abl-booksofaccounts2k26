@@ -27,7 +27,13 @@ export interface ParsedResult<T> {
 
 function num(v: any): number {
   if (v === null || v === undefined || v === "") return 0;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[,\s]/g, ""));
+  if (typeof v === "number") return v;
+  // Handle formulas or complex objects from XLSX if any (though sheet_to_json usually evaluates)
+  if (typeof v === "object" && v !== null && 'result' in v) v = v.result;
+  
+  // Strip out currency symbols, commas, and spaces, retaining only digits, dots, and minus signs
+  const str = String(v).replace(/[^\d.-]/g, "");
+  const n = parseFloat(str);
   return isNaN(n) ? 0 : n;
 }
 
@@ -36,12 +42,19 @@ function toISODate(v: any): string | null {
   if (v instanceof Date && !isNaN(v.getTime())) {
     return v.toISOString().split("T")[0];
   }
-  if (typeof v === "number" && v > 1000) {
-    const date = new Date((v - 25569) * 86400000);
+  if (typeof v === "number") {
+    // Excel date serial conversion (using Math.round to fix precision issues)
+    const date = new Date(Math.round((v - 25569) * 86400000));
     return date.toISOString().split("T")[0];
   }
   const s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  
+  // Attempt to parse standard text dates like "1/15/2026" or "Jan 15, 2026"
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split("T")[0];
+  }
   return null;
 }
 
