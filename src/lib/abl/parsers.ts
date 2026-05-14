@@ -432,7 +432,9 @@ export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<
     let curHeader: any = null;
     const transactions: any[] = [];
 
-    for (const r of dataRows) {
+    for (let i = 0; i < dataRows.length; i++) {
+      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+      const r = dataRows[i];
       if (!r || r.every(c => String(c).trim() === "")) continue;
       const iso = toISODate(r[0]);
       const type = String(r[1] || "").trim().toLowerCase();
@@ -446,7 +448,9 @@ export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<
     }
     if (curHeader) transactions.push(curHeader);
 
-    for (const tx of transactions) {
+    for (let i = 0; i < transactions.length; i++) {
+      if (i % 100 === 0) await new Promise(r => setTimeout(r, 0));
+      const tx = transactions[i];
       const my = monthYearFromISO(tx.date);
       const folio = folioFor("PB", my);
       const entry: any = { id: createId(), entry_date: tx.date, supplier: tx.supplier, invoice_no: tx.no, month_year: my };
