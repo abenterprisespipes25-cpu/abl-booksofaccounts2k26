@@ -10,7 +10,7 @@ import { exportExcel, exportPDF } from "@/lib/abl/exporters";
 import { MonthTabs } from "./MonthTabs";
 import { LedgerTable } from "./LedgerTable";
 import { Button } from "@/components/ui/button";
-import { Upload, FileSpreadsheet, FileText, Printer, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { Upload, FileSpreadsheet, FileText, Printer, Save, Loader2, CheckCircle2, X } from "lucide-react";
 import { toast } from "sonner";
 import { CDBPrintPreview } from "./CDBPrintPreview";
 import {
