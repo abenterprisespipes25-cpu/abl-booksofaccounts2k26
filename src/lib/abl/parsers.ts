@@ -113,12 +113,14 @@ interface HeaderMap {
 }
 
 /**
- * Dynamically detects the header row and column mapping.
+ * Dynamically detects the header row and column mapping across multiple worksheets.
  */
 function detectHeaderConfig(rows: any[][]): HeaderMap | null {
-  for (let i = 0; i < Math.min(rows.length, 50); i++) {
+  if (!rows || rows.length === 0) return null;
+
+  for (let i = 0; i < Math.min(rows.length, 60); i++) {
     const r = rows[i];
-    if (!r) continue;
+    if (!r || !Array.isArray(r)) continue;
 
     const mapping = { date: -1, payee: -1, particulars: -1, vno: -1, cno: -1, account: -1, debit: -1, credit: -1 };
     let matches = 0;
@@ -128,7 +130,7 @@ function detectHeaderConfig(rows: any[][]): HeaderMap | null {
       if (!val) return;
 
       for (const [key, variants] of Object.entries(HEADER_VARIANTS)) {
-        if (variants.some(v => val === v || val.includes(v))) {
+        if (variants.some(v => val === v || val.includes(v) || v.includes(val))) {
           if ((mapping as any)[key] === -1) {
             (mapping as any)[key] = colIdx;
             matches++;
@@ -138,10 +140,52 @@ function detectHeaderConfig(rows: any[][]): HeaderMap | null {
     });
 
     // Essential matches for accounting
+    // We need at least an Account title and one amount column (Debit or Credit)
     if (mapping.account !== -1 && (mapping.debit !== -1 || mapping.credit !== -1)) {
       return { rowIdx: i, cols: mapping as any };
     }
+    
+    // Fallback: If we find Date + Debit + Credit but no explicit "Account" header, 
+    // it might be a simple ledger where the first text column is the account.
+    if (mapping.date !== -1 && mapping.debit !== -1 && mapping.credit !== -1) {
+       if (mapping.account === -1) {
+          // Find first non-date, non-amount column
+          const firstText = r.findIndex((c, idx) => idx !== mapping.date && idx !== mapping.debit && idx !== mapping.credit && String(c).trim().length > 2);
+          if (firstText !== -1) mapping.account = firstText;
+       }
+       return { rowIdx: i, cols: mapping as any };
+    }
   }
+
+  // SECOND PASS: Pattern-based fallback (no headers found)
+  // Scan for rows that look like: [Date] [Text] [Number] [Number]
+  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+    const r = rows[i];
+    if (!r) continue;
+    
+    let dateCol = -1, numCols: number[] = [], textCols: number[] = [];
+    r.forEach((c, idx) => {
+      if (toISODate(c)) dateCol = idx;
+      else if (typeof c === 'number' || (!isNaN(parseFloat(String(c).replace(/[$,]/g,''))) && String(c).includes('.'))) numCols.push(idx);
+      else if (String(c).trim().length > 3) textCols.push(idx);
+    });
+
+    if (dateCol !== -1 && numCols.length >= 1) {
+      return {
+        rowIdx: i - 1, // Assume headers might have been the row before
+        cols: {
+          date: dateCol,
+          account: textCols[0] ?? (dateCol + 1),
+          debit: numCols[0],
+          credit: numCols[1] ?? numCols[0],
+          payee: textCols[1] ?? -1,
+          particulars: textCols[2] ?? -1,
+          vno: -1, cno: -1
+        }
+      };
+    }
+  }
+
   return null;
 }
 
