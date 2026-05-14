@@ -1266,12 +1266,31 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       )}
 
       {loading && rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-white/40 space-y-4">
-          <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
-          <span className="text-sm font-bold tracking-widest uppercase">Loading Records...</span>
+        <div className="space-y-6 animate-in fade-in duration-500">
+           {/* Skeleton Stats */}
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 opacity-50">
+             {[1,2,3,4].map(i => (
+               <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl h-20 animate-pulse" />
+             ))}
+           </div>
+           {/* Skeleton Table */}
+           <div className="bg-[#0a1628] rounded-2xl border border-white/10 p-1 overflow-hidden shadow-2xl">
+              <div className="h-12 bg-white/5 animate-pulse border-b border-white/10" />
+              <div className="space-y-2 p-4">
+                {[1,2,3,4,5,6,7,8,9,10].map(i => (
+                  <div key={i} className="h-8 bg-white/5 rounded animate-pulse" style={{ opacity: 1 - (i*0.08) }} />
+                ))}
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm">
+                 <div className="flex flex-col items-center gap-3">
+                   <Loader2 className="h-10 w-10 text-blue-400 animate-spin" />
+                   <span className="text-blue-400 font-black uppercase tracking-widest text-[10px]">Synchronizing Ledger...</span>
+                 </div>
+              </div>
+           </div>
         </div>
       ) : (
-        <div className="bg-[#0a1628] rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative">
+        <div className="bg-[#0a1628] rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative group">
            <LedgerTable 
              columns={meta.columns} 
              rows={rows} 
@@ -1281,8 +1300,11 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
              onDelete={handleDelete}
              onPrint={handlePrint}
            />
-           {syncing && rows.length > 0 && (
-             <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] pointer-events-none" />
+           {syncing && (
+             <div className="absolute top-2 right-2 flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full animate-in fade-in zoom-in duration-300 z-50">
+                <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
+                <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Background Refresh...</span>
+             </div>
            )}
         </div>
       )}
