@@ -183,28 +183,51 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     const groups: any[][] = [];
     let curGroup: any[] = [];
 
+    let validCount = 0;
+    let skippedCount = 0;
+
     // Step 2: Group sub-rows by transaction
     for (const r of dataRows) {
-      if (!r || r.every(c => String(c).trim() === "")) continue;
-      const acct = String(r[5] || "").trim();
+      if (!r || r.every(c => String(c).trim() === "")) {
+        skippedCount++;
+        continue;
+      }
+      
       const iso = toISODate(r[0]);
-      const no = String(r[2] || "").trim();
-      const payee = String(r[3] || "").trim();
+      const payee = String(r[1] || "").trim();
+      const particulars = String(r[2] || "").trim();
+      const vno = String(r[3] || "").trim();
+      const cno = String(r[4] || "").trim();
+      const acct = String(r[5] || "").trim();
+      const dr = num(r[6]);
+      const cr = num(r[7]);
 
-      if (iso && (no || payee)) {
+      // A row is a start of a transaction if it has a date AND some details
+      if (iso && (payee || vno || cno || dr > 0 || cr > 0)) {
         if (curGroup.length > 0) groups.push(curGroup);
         curGroup = [r];
-      } else if (acct) {
+        validCount++;
+      } 
+      // A sub-row must have an account and amounts
+      else if (acct && (dr > 0 || cr > 0)) {
         if (curGroup.length > 0) curGroup.push(r);
+        validCount++;
+      } else {
+        skippedCount++;
       }
     }
     if (curGroup.length > 0) groups.push(curGroup);
+    
+    console.log(`[UPLOAD] Worksheet: ${sheetName} | Total scanned: ${dataRows.length} | Valid rows: ${validCount} | Skipped: ${skippedCount}`);
 
     for (const txRows of groups) {
       const first = txRows[0];
       const iso = toISODate(first[0]);
-      const no = String(first[2] || "").trim();
-      const payee = String(first[3] || "").trim();
+      const payee = String(first[1] || "").trim();
+      const particulars = String(first[2] || "").trim();
+      const vno = String(first[3] || "").trim();
+      const cno = String(first[4] || "").trim();
+      
       const my = monthYearFromISO(iso);
       if (!detectedMonthYear) detectedMonthYear = my;
       const folio = folioFor("CDB", my);
@@ -224,10 +247,10 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         id: createId(),
         entry_date: iso,
         payee,
-        particulars: String(first[4] || "").trim(),
-        petty_cash_vno: String(first[4] || "").includes("PCF") ? (first[4].match(/PCF\s*(\S+)/i)?.[1] || "") : "",
-        check_vno: no,
-        check_no: no,
+        particulars: particulars,
+        petty_cash_vno: vno && vno.toUpperCase().includes("PCF") ? vno : "",
+        check_vno: vno,
+        check_no: cno || vno,
         fund: fullFund,
         fund_label: fundLabel,
         month_tab: my,
@@ -264,7 +287,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
             title: route.acct_title, 
             dr: route.dr, 
             cr: route.cr, 
-            particulars: String(r[4] || "").trim() 
+            particulars: String(r[2] || "").trim() 
           });
           validation.unrouted_entries.push({ account: acct, amount: Math.abs(route.dr - route.cr) });
           validation.routed_total_debit = round2(validation.routed_total_debit + route.dr);
