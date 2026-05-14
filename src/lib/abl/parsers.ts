@@ -123,18 +123,31 @@ const CDB_ROUTING_MAP: Record<string, { col: string }> = {
 function routeCDBSubRow(account: string, colG: number, colH: number) {
   // CIB/COH always -> SUNDRIES
   if (account?.startsWith("CIB:") || account?.startsWith("COH:")) {
-    return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
+    return { col: "SUNDRIES", acct_title: account, dr: colH || 0, cr: 0 };
   }
-  // Routing Map
-  const route = CDB_ROUTING_MAP[account];
-  if (route) {
-    // ⚠️ Net amount: Debits (G) are positive, Credits (H) are negative
-    const val = round2((colG || 0) - (colH || 0));
-    return { col: route.col, amount: val };
+  // Withholding tax -> stored as NEGATIVE in ITW col
+  const wtxAccounts = [
+    "Withholding Tax Payable - Expanded - Top Corp.",
+    "Withholding Tax Payable - Expanded - Top 10,000 Corp.",
+    "ITW TOP 10K CORP.",
+    "Withholding Tax Payable - Compensation",
+    "COMPENSATION",
+    "Withholding Tax Payable - Expanded - at Source",
+    "Withholding Tax Payable - Expanded - At Source",
+    "AT SOURCE",
+    "Withholding Tax Payable - Final"
+  ];
+  if (wtxAccounts.includes(account)) {
+    const route = CDB_ROUTING_MAP[account];
+    return { col: route?.col || "SUNDRIES", amount: -(colH || 0) };
   }
-  // Advances to Employees
+  // Exact match in routing map
+  if (CDB_ROUTING_MAP[account]) {
+    return { col: CDB_ROUTING_MAP[account].col, amount: colG || 0 };
+  }
+  // Startswith match (Advances to Employees)
   if (account?.startsWith("Advances to Employees")) {
-    return { col: "advances", amount: round2((colG || 0) - (colH || 0)) };
+    return { col: "advances", amount: colG || 0 };
   }
   // Everything else -> SUNDRIES
   return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
@@ -170,30 +183,19 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     const groups: any[][] = [];
     let curGroup: any[] = [];
 
-    // Grouping by Date/Payee block
+    // Step 2: Group sub-rows by transaction
     for (const r of dataRows) {
-      // 1. Skip truly empty rows
       if (!r || r.every(c => String(c).trim() === "")) continue;
-
       const acct = String(r[5] || "").trim();
       const iso = toISODate(r[0]);
       const no = String(r[2] || "").trim();
       const payee = String(r[3] || "").trim();
 
-      // 2. Detect start of a new transaction (Date + [No or Payee])
       if (iso && (no || payee)) {
         if (curGroup.length > 0) groups.push(curGroup);
         curGroup = [r];
-      } 
-      // 3. Else if it has an account, it's a sub-row/distribution row
-      else if (acct) {
-        if (curGroup.length > 0) {
-          curGroup.push(r);
-        }
-      }
-      // 4. Else it's a row with data but no account/header (e.g. spacer, totals) - skip safely
-      else {
-        continue;
+      } else if (acct) {
+        if (curGroup.length > 0) curGroup.push(r);
       }
     }
     if (curGroup.length > 0) groups.push(curGroup);
@@ -207,7 +209,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       if (!detectedMonthYear) detectedMonthYear = my;
       const folio = folioFor("CDB", my);
 
-      // Detect Fund
+      // Step 3: detectFund()
       let fullFund = "";
       for (const r of txRows) {
         const acct = String(r[5] || "").trim();
@@ -218,7 +220,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       }
       const fundLabel = FUND_LABEL_MAP[fullFund] || "UNKNOWN";
 
-      // Base entry structure
       const entry: any = {
         id: createId(),
         entry_date: iso,
@@ -237,6 +238,7 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
 
       const sundries: any[] = [];
 
+      // Step 4: For each sub-row -> routeSubRow()
       for (const r of txRows) {
         const acct = String(r[5] || "").trim();
         if (!acct) continue;
@@ -247,13 +249,9 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         validation.source_total_debit = round2(validation.source_total_debit + dr);
         validation.source_total_credit = round2(validation.source_total_credit + cr);
 
-        // ⚠️ Skip the main FUND credit from distribution completely so it doesn't double count
+        // ALWAYS skip the main fund credit from distribution entirely so it doesn't double count in SUNDRIES
         if (acct === fullFund && dr === 0 && cr > 0) {
-          validation.routed_rows++; // We count it as processed even if not distributed
-          // Still need to account for it in credit total for GL check? Actually no, routed total only counts distribution.
-          // The prompt says source totals are from ALL rows in G and H. 
-          // Routed totals are from routing. But wait, if we skip it, routed credit won't equal source credit?
-          // Let's add it to routed credit so it balances.
+          validation.routed_rows++;
           validation.routed_total_credit = round2(validation.routed_total_credit + cr);
           continue; 
         }
@@ -262,23 +260,20 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         validation.routed_rows++;
         
         if (route.col === "SUNDRIES") {
-          // Credits in sundries reduce the cash payout, so they must be negative for the SUM formula
           sundries.push({ 
             title: route.acct_title, 
             dr: route.dr, 
-            cr: -Math.abs(route.cr), // Store credit as negative for SUM 
+            cr: route.cr, 
             particulars: String(r[4] || "").trim() 
           });
           validation.unrouted_entries.push({ account: acct, amount: Math.abs(route.dr - route.cr) });
           validation.routed_total_debit = round2(validation.routed_total_debit + route.dr);
-          validation.routed_total_credit = round2(validation.routed_total_credit + route.cr);
+          validation.routed_total_credit = round2(validation.routed_total_credit + Math.abs(route.cr));
           validation.column_coverage["AD - Sundries DR"] = round2((validation.column_coverage["AD - Sundries DR"] || 0) + route.dr);
-          validation.column_coverage["AE - Sundries CR"] = round2((validation.column_coverage["AE - Sundries CR"] || 0) + route.cr);
+          validation.column_coverage["AE - Sundries CR"] = round2((validation.column_coverage["AE - Sundries CR"] || 0) + Math.abs(route.cr));
         } else {
           entry[route.col] = round2((entry[route.col] || 0) + (route.amount || 0));
-          
           if (["itw_top10k", "itw_compensation", "itw_at_source"].includes(route.col)) {
-            // These are liabilities (credits). route.amount is dr - cr, so it should be negative.
             const crAmount = Math.abs(route.amount);
             validation.routed_total_credit = round2(validation.routed_total_credit + crAmount);
           } else {
@@ -286,24 +281,11 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           }
           validation.column_coverage[route.col] = round2((validation.column_coverage[route.col] || 0) + Math.abs(route.amount));
         }
-
-        // GL Posting for sub-row (Debits/Credits)
-        const rowPart = String(r[4] || "").trim() || entry.particulars;
-        if (acct.includes("Withholding Tax Payable")) {
-          glEntries.push({ month_year: my, entry_date: (iso || ""), account_name: acct, particulars: rowPart, folio, debit: 0, credit: Math.abs(cr || dr), source_module: "CDB", source_ref: no });
-        } else if (acct.startsWith("CIB:") || acct.startsWith("COH:")) {
-          // This could be another bank account (transfer)
-          if (dr > 0) glEntries.push({ month_year: my, entry_date: (iso || ""), account_name: acct, particulars: rowPart, folio, debit: dr, credit: 0, source_module: "CDB", source_ref: no });
-          if (cr > 0) glEntries.push({ month_year: my, entry_date: (iso || ""), account_name: acct, particulars: rowPart, folio, debit: 0, credit: cr, source_module: "CDB", source_ref: no });
-        } else {
-          glEntries.push({ month_year: my, entry_date: (iso || ""), account_name: acct, particulars: rowPart, folio, debit: dr, credit: cr, source_module: "CDB", source_ref: no });
-        }
       }
 
       const txGeneratedRows: any[] = [];
-      // Handle row generation
+      // Step 5: Compute cash_amount = SUM(cols I to AE)
       if (sundries.length === 0) {
-        // Compute Cash Amount from fixed distribution columns only
         entry.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((s, f) => s + (num(entry[f]) || 0), 0));
         allRows.push(entry);
         txGeneratedRows.push(entry);
@@ -313,7 +295,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
             ...entry,
             id: createId(),
             particulars: s.particulars || entry.particulars,
-            // Only the first row of a sundry set carries the fixed distribution columns
             sundries_title: s.title,
             sundries_dr: s.dr,
             sundries_cr: s.cr,
@@ -322,21 +303,61 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           if (idx > 0) {
              CDB_DISTRIBUTION_FIELDS.forEach(f => (row as any)[f] = 0);
           }
-          // Re-compute cash_amount for this specific row (SUM of distribution cols)
           row.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((sum, f) => sum + (num(row[f]) || 0), 0));
           allRows.push(row);
           txGeneratedRows.push(row);
         });
       }
 
-      // GL Bank Credit for the entire transaction
-      const bankCredit = round2(txGeneratedRows.reduce((s, r) => s + (num(r.cash_amount) || 0), 0));
+      // Step 7: GL Auto-posting (ACCOUNTANT LOGIC) 
+      const pushGL = (account_name: string, account_type: string, debit: number, credit: number, particulars: string) => {
+        if (debit === 0 && credit === 0) return;
+        glEntries.push({ month_year: my, entry_date: (iso || ""), account_name, particulars, folio, debit, credit, source_module: "CDB", source_ref: no });
+      };
 
-      if (fullFund && bankCredit !== 0) {
-        glEntries.push({
-          month_year: my, entry_date: (iso || ""), account_name: fullFund, particulars: payee,
-          folio, debit: 0, credit: Math.abs(bankCredit), source_module: "CDB", source_ref: no
-        });
+      for (const row of txGeneratedRows) {
+        const p = row.particulars || payee;
+        
+        // 1. BANK/FUND ACCOUNT -> CR: cash_amount
+        if (fullFund && row.cash_amount !== 0) {
+          pushGL(fullFund, "ASSET", 0, Math.abs(row.cash_amount), "Cash Disbursements");
+        }
+
+        if (!row._is_sub_row) {
+          // 2. ACCOUNTS PAYABLE -> DR
+          if (row.accounts_payable) pushGL("Accounts Payable", "LIABILITY", row.accounts_payable, 0, p);
+          // 3. INPUT VAT -> DR
+          if (row.vat_input_tax) pushGL("Input VAT", "ASSET", row.vat_input_tax, 0, p);
+          // 4. WITHHOLDING TAX -> CR (stored as negative)
+          if (row.itw_top10k) pushGL("Withholding Tax Payable - Expanded - Top Corp.", "LIABILITY", 0, Math.abs(row.itw_top10k), p);
+          if (row.itw_compensation) pushGL("Withholding Tax Payable - Compensation", "LIABILITY", 0, Math.abs(row.itw_compensation), p);
+          if (row.itw_at_source) pushGL("Withholding Tax Payable - Expanded - at Source", "LIABILITY", 0, Math.abs(row.itw_at_source), p);
+          // 5,6. SSS -> DR
+          if (row.sss_prem) pushGL("SSS, PHIC and HDMF Premiums Payable", "LIABILITY", row.sss_prem, 0, p);
+          if (row.sss_loan) pushGL("SSS and HDMF Loans Payable", "LIABILITY", row.sss_loan, 0, p);
+          // 7. EXPENSE ACCOUNTS -> DR
+          if (row.direct_labor) pushGL("Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic", "EXPENSE", row.direct_labor, 0, p);
+          if (row.overhead_labor) pushGL("Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic", "EXPENSE", row.overhead_labor, 0, p);
+          if (row.clw_plant) pushGL("Cost of Manufacturing:Overhead:OH-Communication, Light & Water", "EXPENSE", row.clw_plant, 0, p);
+          if (row.clw_admin) pushGL("General and Administrative Expenses:G&A-Communication, Light & Water", "EXPENSE", row.clw_admin, 0, p);
+          if (row.clw_sales) pushGL("Selling Expenses:Selling-Communication, Light & Water", "EXPENSE", row.clw_sales, 0, p);
+          if (row.outside_services) pushGL("Cost of Manufacturing:Overhead:OH-Outside Service", "EXPENSE", row.outside_services, 0, p);
+          if (row.travel_admin) pushGL("General and Administrative Expenses:G&A-Travel and Transportation", "EXPENSE", row.travel_admin, 0, p);
+          if (row.travel_sales) pushGL("Selling Expenses:Selling-Travel and Transportation", "EXPENSE", row.travel_sales, 0, p);
+          if (row.travel_const) pushGL("Cost of Construction:Cons-Travel and Transportation", "EXPENSE", row.travel_const, 0, p);
+          if (row.travel_water) pushGL("Cost of Manufacturing:Overhead:OH-Travel and Transportation", "EXPENSE", row.travel_water, 0, p);
+          if (row.sales_comm) pushGL("Selling Expenses:Selling-Commissions", "EXPENSE", row.sales_comm, 0, p);
+          if (row.delivery_exp) pushGL("Selling Expenses:Selling-Delivery Expense", "EXPENSE", row.delivery_exp, 0, p);
+          // 8. ADVANCES -> DR
+          if (row.advances) pushGL("Advances to Employees", "ASSET", row.advances, 0, p);
+        }
+
+        // 9. SUNDRIES -> DR/CR
+        if (row.sundries_title) {
+          const sType = classifyAccount(row.sundries_title);
+          if (row.sundries_dr) pushGL(row.sundries_title, sType, row.sundries_dr, 0, p);
+          if (row.sundries_cr) pushGL(row.sundries_title, sType, 0, Math.abs(row.sundries_cr), p);
+        }
       }
     }
   }
