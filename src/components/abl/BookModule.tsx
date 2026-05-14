@@ -350,6 +350,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     try {
 
       const buf = await file.arrayBuffer();
+      
+      // Prevent UI freezing by yielding back to the main thread before heavy parsing
+      await new Promise(r => setTimeout(r, 50));
+      
       const parsed = PARSERS[moduleId](buf);
       const monthsInFile = Array.from(new Set(parsed.rows.map((r: any) => r.month_year))).filter(Boolean) as string[];
       
