@@ -88,12 +88,21 @@ export function LedgerTable({
   }, [rows, search, columns]);
 
   // Totals
-  const totals: Record<string, number> = {};
-  for (const c of columns) {
-    if (c.type === "currency" || c.type === "formula") {
-      totals[c.field] = filtered.reduce((s, r) => s + (Number(r[c.field]) || 0), 0);
+  const totals = useMemo(() => {
+    const res: Record<string, number> = {};
+    const currencyCols = columns.filter(c => c.type === "currency" || c.type === "formula");
+    
+    if (currencyCols.length === 0) return res;
+
+    for (let i = 0; i < filtered.length; i++) {
+      const r = filtered[i];
+      for (let j = 0; j < currencyCols.length; j++) {
+        const field = currencyCols[j].field;
+        res[field] = (res[field] || 0) + (Number(r[field]) || 0);
+      }
     }
-  }
+    return res;
+  }, [filtered, columns]);
 
   // ── Styles ──
   const BORDER = "1px solid #000";
