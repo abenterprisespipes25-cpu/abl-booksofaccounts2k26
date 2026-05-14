@@ -194,76 +194,89 @@ function detectHeaderConfig(rows: any[][]): HeaderMap | null {
 function classifyAccount(name: string): "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" {
   const n = (name || "").toLowerCase();
   if (n.startsWith("cib:") || n.startsWith("coh:")) return "ASSET";
-  if (n.includes("receivable") || n.includes("prepaid") || n.includes("inventory") || 
-      n.includes("property") || n.includes("equipment") || n.includes("advances") || 
-      n.includes("deposits") || n.includes("land") || n.includes("input vat") || n.includes("input tax")) return "ASSET";
+  if (n.includes("receivable") || n.includes("prepaid") || 
+      n.includes("inventory") || n.includes("property") || 
+      n.includes("equipment") || n.includes("advances") || 
+      n.includes("deposits") || n.includes("land") || 
+      n.includes("input vat") || n.includes("input tax")) return "ASSET";
   if (n.includes("payable") || n.includes("withholding") || n.includes("sss") || 
       n.includes("phic") || n.includes("hdmf") || n.includes("accrued") || n.includes("tax payable")) return "LIABILITY";
   if (n.includes("sales") || n.includes("income") || n.includes("revenue")) return "INCOME";
   return "EXPENSE";
 }
 
-const CDB_ROUTING_MAP: Record<string, { col: string }> = {
-  "Accounts Payable": { col: "accounts_payable" },
-  "Accounts Payable - Others": { col: "accounts_payable" },
-  "Input VAT": { col: "vat_input_tax" },
-  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic": { col: "direct_labor" },
-  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Overtime": { col: "direct_labor" },
-  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic": { col: "overhead_labor" },
-  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Overtime": { col: "overhead_labor" },
-  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water": { col: "clw_plant" },
-  "General and Administrative Expenses:G&A-Communication, Light & Water": { col: "clw_admin" },
-  "Selling Expenses:Selling-Communication, Light & Water": { col: "clw_sales" },
-  "Withholding Tax Payable - Expanded - Top Corp.": { col: "itw_top10k" },
-  "Withholding Tax Payable - Expanded - Top 10,000 Corp.": { col: "itw_top10k" },
-  "ITW TOP 10K CORP.": { col: "itw_top10k" },
-  "Withholding Tax Payable - Compensation": { col: "itw_compensation" },
-  "COMPENSATION": { col: "itw_compensation" },
-  "Withholding Tax Payable - Expanded - at Source": { col: "itw_at_source" },
-  "Withholding Tax Payable - Expanded - At Source": { col: "itw_at_source" },
-  "AT SOURCE": { col: "itw_at_source" },
-  "Withholding Tax Payable - Final": { col: "itw_at_source" },
-  "SSS, PHIC and HDMF Premiums Payable": { col: "sss_prem" },
-  "SSS and HDMF Loans Payable": { col: "sss_loan" },
-  "Cost of Construction:Cons-Outside Services": { col: "outside_services" },
-  "Cost of Manufacturing:Overhead:OH-Outside Service": { col: "outside_services" },
-  "Cost of Manufacturing:Overhead:OH-Outside Services": { col: "outside_services" },
-  "General and Administrative Expenses:G&A-Travel and Transportation": { col: "travel_admin" },
-  "Selling Expenses:Selling-Travel and Transportation": { col: "travel_sales" },
-  "Cost of Construction:Cons-Travel and Transportation": { col: "travel_const" },
-  "Cost of Manufacturing:Overhead:OH-Travel and Transportation": { col: "travel_water" },
-  "Selling Expenses:Selling-Commissions": { col: "sales_comm" },
-  "Selling Expenses:Selling-Delivery Expense": { col: "delivery_exp" },
+const CDB_ROUTING_MAP: Record<string, { col: string; amountType: "col_G" | "col_H_negative" }> = {
+  "Accounts Payable":           { col: "accounts_payable", amountType: "col_G" },
+  "Accounts Payable - Others":  { col: "accounts_payable", amountType: "col_G" },
+  "Input VAT":                  { col: "vat_input_tax",    amountType: "col_G" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic":    { col: "direct_labor", amountType: "col_G" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Overtime": { col: "direct_labor", amountType: "col_G" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic":        { col: "overhead_labor", amountType: "col_G" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Overtime":     { col: "overhead_labor", amountType: "col_G" },
+  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water":                  { col: "clw_plant", amountType: "col_G" },
+  "General and Administrative Expenses:G&A-Communication, Light & Water":            { col: "clw_admin", amountType: "col_G" },
+  "Selling Expenses:Selling-Communication, Light & Water":                           { col: "clw_sales", amountType: "col_G" },
+  "Withholding Tax Payable - Expanded - Top Corp.":  { col: "itw_top10k",       amountType: "col_H_negative" },
+  "Withholding Tax Payable - Expanded - Top 10,000 Corp.": { col: "itw_top10k", amountType: "col_H_negative" },
+  "ITW TOP 10K CORP.": { col: "itw_top10k", amountType: "col_H_negative" },
+  "Withholding Tax Payable - Compensation":          { col: "itw_compensation", amountType: "col_H_negative" },
+  "COMPENSATION": { col: "itw_compensation", amountType: "col_H_negative" },
+  "Withholding Tax Payable - Expanded - at Source":  { col: "itw_at_source",    amountType: "col_H_negative" },
+  "Withholding Tax Payable - Expanded - At Source":  { col: "itw_at_source",    amountType: "col_H_negative" },
+  "AT SOURCE": { col: "itw_at_source", amountType: "col_H_negative" },
+  "Withholding Tax Payable - Final":                 { col: "itw_at_source",    amountType: "col_H_negative" },
+  "SSS, PHIC and HDMF Premiums Payable":             { col: "sss_prem",         amountType: "col_G" },
+  "SSS and HDMF Loans Payable":                      { col: "sss_loan",         amountType: "col_G" },
+  "Cost of Construction:Cons-Outside Services":               { col: "outside_services", amountType: "col_G" },
+  "Cost of Manufacturing:Overhead:OH-Outside Service":        { col: "outside_services", amountType: "col_G" },
+  "Cost of Manufacturing:Overhead:OH-Outside Services":       { col: "outside_services", amountType: "col_G" },
+  "General and Administrative Expenses:G&A-Travel and Transportation":  { col: "travel_admin", amountType: "col_G" },
+  "Selling Expenses:Selling-Travel and Transportation":                 { col: "travel_sales", amountType: "col_G" },
+  "Cost of Construction:Cons-Travel and Transportation":                { col: "travel_const", amountType: "col_G" },
+  "Cost of Manufacturing:Overhead:OH-Travel and Transportation":        { col: "travel_water", amountType: "col_G" },
+  "Selling Expenses:Selling-Commissions":       { col: "sales_comm",  amountType: "col_G" },
+  "Selling Expenses:Selling-Delivery Expense":  { col: "delivery_exp", amountType: "col_G" },
 };
 
-function routeCDBSubRow(account: string, dr: number, cr: number) {
+function routeCDBSubRow(account: string, colG: number, colH: number) {
+  // CIB/COH always → SUNDRIES
   if (account?.startsWith("CIB:") || account?.startsWith("COH:")) {
-    return { col: "SUNDRIES", acct_title: account, dr: cr || 0, cr: 0 };
+    return {
+      col: "SUNDRIES",
+      acct_title: account,
+      dr: colH || 0, // bank credit = cash out (debit to sundries in our display logic)
+      cr: 0
+    };
   }
-  const wtxAccounts = [
-    "Withholding Tax Payable - Expanded - Top Corp.", "Withholding Tax Payable - Expanded - Top 10,000 Corp.",
-    "ITW TOP 10K CORP.", "Withholding Tax Payable - Compensation", "COMPENSATION",
-    "Withholding Tax Payable - Expanded - at Source", "Withholding Tax Payable - Expanded - At Source",
-    "AT SOURCE", "Withholding Tax Payable - Final"
-  ];
-  if (wtxAccounts.includes(account)) {
-    const route = CDB_ROUTING_MAP[account];
-    return { col: route?.col || "SUNDRIES", amount: -(cr || 0) };
+
+  // Exact match in routing map
+  const route = CDB_ROUTING_MAP[account];
+  if (route) {
+    if (route.amountType === "col_H_negative") {
+      return { col: route.col, amount: -(colH || 0) };
+    }
+    return { col: route.col, amount: colG || 0 };
   }
-  if (CDB_ROUTING_MAP[account]) {
-    return { col: CDB_ROUTING_MAP[account].col, amount: dr || 0 };
-  }
+
+  // Startswith match (Advances to Employees)
   if (account?.startsWith("Advances to Employees")) {
-    return { col: "advances", amount: dr || 0 };
+    return { col: "advances", amount: colG || 0 };
   }
-  return { col: "SUNDRIES", acct_title: account, dr: dr || 0, cr: cr || 0 };
+
+  // Everything else → SUNDRIES
+  return {
+    col: "SUNDRIES",
+    acct_title: account,
+    dr: colG || 0,
+    cr: colH || 0
+  };
 }
 
 /* ───── MAIN CDB PARSER ───── */
 
 export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const t0 = performance.now();
-  console.log("[UPLOAD DEBUG] CDB Parsing started...");
+  console.log("[UPLOAD DEBUG] CDB Parsing started (Ref Spec v2025x)...");
   
   const wb = XLSX.read(buf, { type: "array", cellDates: true, cellNF: false, cellText: false });
   if (!wb.SheetNames.length) throw new Error("⚠ No worksheets detected in file.");
@@ -281,61 +294,33 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     gl_total_debit: 0, gl_total_credit: 0
   };
 
-  // Find the best worksheet
-  let bestSheetName = "";
-  let bestHeader: HeaderMap | null = null;
-  let maxValidRows = 0;
-
-  for (const name of wb.SheetNames) {
-    const sheet = wb.Sheets[name];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
-    const header = detectHeaderConfig(rows);
-    
-    if (header) {
-      // Basic count of potential rows
-      const potential = rows.slice(header.rowIdx + 1).filter(r => r[header.cols.account] && (num(r[header.cols.debit]) !== 0 || num(r[header.cols.credit]) !== 0)).length;
-      if (potential > maxValidRows) {
-        maxValidRows = potential;
-        bestSheetName = name;
-        bestHeader = header;
-      }
+  // Select best sheet (usually first one for Detail reports)
+  const bestSheetName = wb.SheetNames[0];
+  const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
+  
+  // Find header row (A=Date, B=Type, C=No, D=Name, E=Memo, F=Account, G=Debit, H=Credit)
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(sheetRows.length, 50); i++) {
+    const r = sheetRows[i];
+    if (r[0] === "Date" && r[5] === "Account" && r[6] === "Debit") {
+      headerIdx = i; break;
     }
   }
+  if (headerIdx === -1) headerIdx = 0; // fallback
 
-  // FAILSAFE: If no header detected, try first sheet with raw mapping
-  if (!bestHeader) {
-    console.warn("[UPLOAD DEBUG] Strict header detection failed. Using Failsafe Mode on Sheet 0.");
-    bestSheetName = wb.SheetNames[0];
-    bestHeader = {
-      rowIdx: -1,
-      cols: { date: 0, payee: 1, particulars: 2, vno: 3, cno: 4, account: 5, debit: 6, credit: 7 }
-    };
-  }
-
-  console.log(`[UPLOAD DEBUG] Worksheet Selected: ${bestSheetName} (${maxValidRows} valid-looking rows)`);
-
-  const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
-  const dataRows = sheetRows.slice(bestHeader.rowIdx + 1);
+  const dataRows = sheetRows.slice(headerIdx + 1);
   const groups: any[][] = [];
   let curGroup: any[] = [];
   
-  let validRowCount = 0;
-  let skippedCount = 0;
-
   for (let i = 0; i < dataRows.length; i++) {
-    if (i % 800 === 0) await new Promise(r => setTimeout(r, 0));
     const r = dataRows[i];
-    if (!r || r.every(c => !String(c).trim())) {
-      skippedCount++; continue;
-    }
+    if (!r || r.every(c => !String(c).trim())) continue;
 
-    const { cols } = bestHeader;
-    const acct = String(r[cols.account] || "").trim();
-    const dr = num(r[cols.debit]);
-    const cr = num(r[cols.credit]);
-    const date = toISODate(r[cols.date]);
+    const date = toISODate(r[0]);
+    const acct = String(r[5] || "").trim();
+    const dr = num(r[6]);
+    const cr = num(r[7]);
 
-    // RULE: Account exists AND (Dr != 0 or Cr != 0)
     if (acct && (dr !== 0 || cr !== 0)) {
       if (date) {
         if (curGroup.length > 0) groups.push(curGroup);
@@ -345,36 +330,26 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
       } else {
         groups.push([r]);
       }
-      validRowCount++;
-    } else {
-      skippedCount++;
     }
   }
   if (curGroup.length > 0) groups.push(curGroup);
 
-  if (groups.length === 0) {
-     throw new Error(`⚠ No valid accounting transactions found in worksheet '${bestSheetName}'. Check if the file has 'Account Title' and 'Debit/Credit' columns.`);
-  }
+  for (const txRows of groups) {
+    const main = txRows[0];
+    const isoDate = toISODate(main[0]);
+    if (!isoDate) continue;
 
-  for (let i = 0; i < groups.length; i++) {
-    if (i % 300 === 0) await new Promise(r => setTimeout(r, 0));
-    const txRows = groups[i];
-    const first = txRows[0];
-    const { cols } = bestHeader;
-    const iso = toISODate(first[cols.date]) || toISODate(txRows.find(r => toISODate(r[cols.date]))?.[cols.date]);
-    if (!iso) continue;
-
-    const payee = String(first[cols.payee] || "").trim();
-    const particulars = String(first[cols.particulars] || "").trim();
-    const vno = String(first[cols.vno] || "").trim();
-    const cno = String(first[cols.cno] || "").trim();
-    const my = monthYearFromISO(iso);
+    const payee = String(main[3] || "").trim();
+    const particulars = String(main[4] || "").trim();
+    const cvNo = String(main[2] || "").trim();
+    const my = monthYearFromISO(isoDate);
     if (!detectedMonthYear) detectedMonthYear = my;
-    const folio = folioFor("CDB", my);
+    const folio = "CDB";
 
+    // Detect Fund
     let fullFund = "";
     for (const r of txRows) {
-      const acct = String(r[cols.account] || "").trim();
+      const acct = String(r[5] || "").trim();
       if (acct.startsWith("CIB:") || acct.startsWith("COH:")) {
         fullFund = acct; break;
       }
@@ -382,72 +357,86 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     const fundLabel = FUND_LABEL_MAP[fullFund] || "UNKNOWN";
 
     const entry: any = {
-      id: createId(), entry_date: iso, payee, particulars,
-      petty_cash_vno: vno && vno.toUpperCase().includes("PCF") ? vno : "",
-      check_vno: vno, check_no: cno || vno,
-      fund: fullFund, fund_label: fundLabel, month_tab: my,
+      id: createId(), 
+      date: isoDate, 
+      entry_date: isoDate, 
+      payee, 
+      particulars,
+      petty_cash_vno: cvNo.toUpperCase().includes("PCF") ? cvNo : "",
+      check_vno: cvNo, 
+      check_no: cvNo, 
+      fund: fullFund, 
+      fund_label: fundLabel,
+      month_tab: my,
+      month_year: my,
       source_module: "Cash Disbursements Book",
     };
     CDB_DISTRIBUTION_FIELDS.forEach(f => entry[f] = 0);
     entry.sundries_title = "";
+    
     const sundries: any[] = [];
 
     for (const r of txRows) {
-      const acct = String(r[cols.account] || "").trim();
+      const acct = String(r[5] || "").trim();
       if (!acct) continue;
-      const dr = num(r[cols.debit]);
-      const cr = num(r[cols.credit]);
+      const dr = num(r[6]);
+      const cr = num(r[7]);
+      const memo = String(r[4] || "").trim();
 
       validation.source_rows++;
       validation.source_total_debit = round2(validation.source_total_debit + dr);
       validation.source_total_credit = round2(validation.source_total_credit + cr);
 
-      if (acct === fullFund && dr === 0 && cr > 0) {
-        validation.routed_total_credit = round2(validation.routed_total_credit + cr);
-        continue;
-      }
+      // Skip the bank credit row from distribution
+      if (acct === fullFund) continue;
 
       const route = routeCDBSubRow(acct, dr, cr);
-      validation.routed_rows++;
-
       if (route.col === "SUNDRIES") {
-        sundries.push({ title: route.acct_title, dr: route.dr, cr: route.cr, particulars: String(r[cols.particulars] || "").trim() });
-        validation.unrouted_entries.push({ account: acct, amount: Math.abs(route.dr - route.cr) });
-        validation.routed_total_debit = round2(validation.routed_total_debit + route.dr);
-        validation.routed_total_credit = round2(validation.routed_total_credit + Math.abs(route.cr));
-        validation.column_coverage["AD - Sundries DR"] = round2((validation.column_coverage["AD - Sundries DR"] || 0) + route.dr);
-        validation.column_coverage["AE - Sundries CR"] = round2((validation.column_coverage["AE - Sundries CR"] || 0) + Math.abs(route.cr));
+        sundries.push({ 
+          title: route.acct_title, 
+          dr: route.dr, 
+          cr: route.cr, 
+          particulars: memo || particulars 
+        });
       } else {
         entry[route.col] = round2((entry[route.col] || 0) + (route.amount || 0));
-        if (["itw_top10k", "itw_compensation", "itw_at_source"].includes(route.col)) {
-          validation.routed_total_credit = round2(validation.routed_total_credit + Math.abs(route.amount));
-        } else {
-          validation.routed_total_debit = round2(validation.routed_total_debit + route.amount);
-        }
-        validation.column_coverage[route.col] = round2((validation.column_coverage[route.col] || 0) + Math.abs(route.amount));
       }
     }
 
     const txGeneratedRows: any[] = [];
     if (sundries.length === 0) {
       entry.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((s, f) => s + (num(entry[f]) || 0), 0));
-      allRows.push(entry); txGeneratedRows.push(entry);
+      allRows.push(entry);
+      txGeneratedRows.push(entry);
     } else {
       sundries.forEach((s, idx) => {
-        const row = { ...entry, id: createId(), particulars: s.particulars || entry.particulars, sundries_title: s.title, sundries_dr: s.dr, sundries_cr: s.cr, _is_sub_row: idx > 0 };
+        const row = { 
+          ...entry, 
+          id: createId(), 
+          particulars: s.particulars, 
+          sundries_title: s.title, 
+          sundries_dr: s.dr, 
+          sundries_cr: s.cr, 
+          _is_sub_row: idx > 0 
+        };
         if (idx > 0) CDB_DISTRIBUTION_FIELDS.forEach(f => (row as any)[f] = 0);
         row.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((sum, f) => sum + (num(row[f]) || 0), 0));
-        allRows.push(row); txGeneratedRows.push(row);
+        allRows.push(row);
+        txGeneratedRows.push(row);
       });
     }
 
+    // GL Posting Logic
     const pushGL = (account_name: string, account_type: string, debit: number, credit: number, p: string) => {
       if (debit === 0 && credit === 0) return;
-      glEntries.push({ month_year: my, entry_date: iso, account_name, particulars: p, folio, debit, credit, source_module: "CDB", source_ref: cno || vno });
+      glEntries.push({ 
+        month_year: my, entry_date: isoDate, account_name, particulars: p, 
+        folio, debit, credit, source_module: "Cash Disbursements Book", source_ref: cvNo 
+      });
     };
 
     for (const row of txGeneratedRows) {
-      const p = row.particulars || payee;
+      const p = row.particulars || particulars;
       if (fullFund && row.cash_amount !== 0) pushGL(fullFund, "ASSET", 0, Math.abs(row.cash_amount), "Cash Disbursements");
       if (!row._is_sub_row) {
         if (row.accounts_payable) pushGL("Accounts Payable", "LIABILITY", row.accounts_payable, 0, p);
@@ -479,8 +468,11 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     }
   }
 
-  allRows.sort((a, b) => (a.entry_date || "").localeCompare(b.entry_date || "") || compareStrings(a.check_vno, b.check_vno));
-  glEntries.forEach(g => { validation.gl_total_debit = round2(validation.gl_total_debit + g.debit); validation.gl_total_credit = round2(validation.gl_total_credit + g.credit); });
+  allRows.sort((a, b) => (a.date || "").localeCompare(b.date || "") || compareStrings(a.check_vno, b.check_vno));
+  validation.routed_total_debit = round2(glEntries.reduce((s, e) => s + e.debit, 0));
+  validation.routed_total_credit = round2(glEntries.reduce((s, e) => s + e.credit, 0));
+  validation.gl_total_debit = validation.routed_total_debit;
+  validation.gl_total_credit = validation.routed_total_credit;
 
   const t1 = performance.now();
   console.log(`[UPLOAD DEBUG] Success: ${allRows.length} rows parsed in ${((t1 - t0) / 1000).toFixed(2)}s`);
