@@ -114,16 +114,21 @@ interface HeaderMap {
 
 /**
  * Dynamically detects the header row and column mapping across multiple worksheets.
+ * Uses a scoring system to find the most likely header row.
  */
 function detectHeaderConfig(rows: any[][]): HeaderMap | null {
   if (!rows || rows.length === 0) return null;
 
-  for (let i = 0; i < Math.min(rows.length, 60); i++) {
+  let bestHeader: HeaderMap | null = null;
+  let highestScore = 0;
+
+  // Scan first 100 rows for potential headers
+  for (let i = 0; i < Math.min(rows.length, 100); i++) {
     const r = rows[i];
     if (!r || !Array.isArray(r)) continue;
 
     const mapping = { date: -1, payee: -1, particulars: -1, vno: -1, cno: -1, account: -1, debit: -1, credit: -1 };
-    let matches = 0;
+    let score = 0;
 
     r.forEach((cell, colIdx) => {
       const val = String(cell || "").trim().toUpperCase();
@@ -133,33 +138,46 @@ function detectHeaderConfig(rows: any[][]): HeaderMap | null {
         if (variants.some(v => val === v || val.includes(v) || v.includes(val))) {
           if ((mapping as any)[key] === -1) {
             (mapping as any)[key] = colIdx;
-            matches++;
+            // Higher weight for essential columns
+            if (key === 'date' || key === 'account') score += 10;
+            else if (key === 'debit' || key === 'credit') score += 8;
+            else score += 3;
           }
         }
       }
     });
 
-    // Essential matches for accounting
-    // We need at least an Account title and one amount column (Debit or Credit)
-    if (mapping.account !== -1 && (mapping.debit !== -1 || mapping.credit !== -1)) {
-      return { rowIdx: i, cols: mapping as any };
-    }
-    
-    // Fallback: If we find Date + Debit + Credit but no explicit "Account" header, 
-    // it might be a simple ledger where the first text column is the account.
-    if (mapping.date !== -1 && mapping.debit !== -1 && mapping.credit !== -1) {
-       if (mapping.account === -1) {
-          // Find first non-date, non-amount column
-          const firstText = r.findIndex((c, idx) => idx !== mapping.date && idx !== mapping.debit && idx !== mapping.credit && String(c).trim().length > 2);
-          if (firstText !== -1) mapping.account = firstText;
-       }
-       return { rowIdx: i, cols: mapping as any };
+    // If we have a Date and at least one amount or account column, it's a strong candidate
+    if (mapping.date !== -1 && (mapping.debit !== -1 || mapping.credit !== -1 || mapping.account !== -1)) {
+      if (score > highestScore) {
+        highestScore = score;
+        bestHeader = { rowIdx: i, cols: mapping as any };
+      }
     }
   }
 
-  // SECOND PASS: Pattern-based fallback (no headers found)
-  // Scan for rows that look like: [Date] [Text] [Number] [Number]
-  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+  if (bestHeader) {
+    // Fill in account if missing but other critical columns are present
+    if (bestHeader.cols.account === -1) {
+       // Guess account column based on text density in data rows
+       const sampleRows = rows.slice(bestHeader.rowIdx + 1, bestHeader.rowIdx + 20);
+       let bestCol = -1;
+       let maxLen = 0;
+       for (let c = 0; c < 15; c++) {
+         if (c === bestHeader.cols.date || c === bestHeader.cols.debit || c === bestHeader.cols.credit) continue;
+         const avgLen = sampleRows.reduce((acc, row) => acc + String(row[c] || "").length, 0) / (sampleRows.length || 1);
+         if (avgLen > maxLen) {
+           maxLen = avgLen;
+           bestCol = c;
+         }
+       }
+       if (bestCol !== -1) bestHeader.cols.account = bestCol;
+    }
+    return bestHeader;
+  }
+
+  // SECOND PASS: Data Pattern Recognition (no headers found)
+  for (let i = 0; i < Math.min(rows.length, 50); i++) {
     const r = rows[i];
     if (!r) continue;
     
@@ -171,8 +189,9 @@ function detectHeaderConfig(rows: any[][]): HeaderMap | null {
     });
 
     if (dateCol !== -1 && numCols.length >= 1) {
+      console.log(`[PARSER] Pattern match found at row ${i}. Date Col: ${dateCol}`);
       return {
-        rowIdx: i - 1, // Assume headers might have been the row before
+        rowIdx: i - 1, 
         cols: {
           date: dateCol,
           account: textCols[0] ?? (dateCol + 1),
@@ -291,6 +310,9 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   }
 
   const { cols } = bestHeader;
+  console.log(`[PARSER] Using Sheet: "${bestSheetName}" at rowIdx: ${bestHeader.rowIdx}`);
+  console.log(`[PARSER] Columns: Date=${cols.date}, Account=${cols.account}, Debit=${cols.debit}, Credit=${cols.credit}`);
+
   const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
   const dataRows = sheetRows.slice(bestHeader.rowIdx + 1);
   const groups: any[][] = [];
@@ -304,26 +326,41 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     const vno = String(r[cols.vno] || "").trim();
     const payee = String(r[cols.payee] || "").trim();
 
+    // A new group starts if we have a Date AND (Voucher No or Payee)
     if (date && (vno || payee)) {
       if (curGroup.length > 0) groups.push(curGroup);
       curGroup = [r];
     } else if (curGroup.length > 0) {
       curGroup.push(r);
     } else {
-      groups.push([r]);
+      // If no current group, start one with this row anyway
+      if (curGroup.length > 0) groups.push(curGroup);
+      curGroup = [r];
     }
   }
   if (curGroup.length > 0) groups.push(curGroup);
 
+  console.log(`[PARSER] Groups found: ${groups.length}`);
+
+  let lastKnownDate: string | null = null;
+
   for (const txRows of groups) {
     const main = txRows[0];
-    const isoDate = toISODate(main[cols.date]) || toISODate(txRows.find(r => toISODate(r[cols.date]))?.[cols.date]);
-    if (!isoDate) continue;
+    const groupDate = txRows.find(r => toISODate(r[cols.date]))?.[cols.date];
+    const isoDate = toISODate(groupDate) || lastKnownDate;
+    
+    if (!isoDate) {
+      console.log(`[PARSER] Skipping group: No date found.`);
+      continue;
+    }
+    lastKnownDate = isoDate;
 
-    const payee = String(main[cols.payee] || "").trim();
-    const mainParticulars = String(main[cols.particulars] || "").trim();
-    const cvNo = String(main[cols.vno] || "").trim();
-    const cashAmount = num(main[cols.credit]); // Strictly from Column H (Credit)
+    const payee = String(main[cols.payee] || "").trim() || txRows.find(r => String(r[cols.payee] || "").trim())?.[cols.payee];
+    const mainParticulars = String(main[cols.particulars] || "").trim() || txRows.find(r => String(r[cols.particulars] || "").trim())?.[cols.particulars];
+    const cvNo = String(main[cols.vno] || "").trim() || txRows.find(r => String(r[cols.vno] || "").trim())?.[cols.vno];
+    
+    // Total cash amount for this transaction (usually from Column H Credit)
+    const cashAmount = txRows.reduce((sum, r) => sum + num(r[cols.credit]), 0);
     
     const my = monthYearFromISO(isoDate);
     if (!detectedMonthYear) detectedMonthYear = my;
@@ -343,17 +380,16 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
       id: createId(), 
       date: isoDate, 
       entry_date: isoDate, 
-      payee, 
-      particulars: mainParticulars,
-      petty_cash_vno: cvNo.toUpperCase().includes("PCF") ? cvNo : "",
-      check_vno: cvNo, 
-      check_no: cvNo, 
-      fund: fullFund, 
+      payee: String(payee || "").trim(), 
+      particulars: String(mainParticulars || "").trim(),
+      petty_cash_vno: cvNo && String(cvNo).toUpperCase().includes("PCF") ? String(cvNo) : "",
+      check_vno: String(cvNo || ""), 
+      check_no: String(cvNo || ""), 
+      month_year: my,
+      fund: fullFund,
       fund_label: fundLabel,
       cash_amount: cashAmount,
-      month_tab: my,
-      month_year: my,
-      source_module: "Cash Disbursements Book",
+      _is_sub_row: false
     };
     CDB_DISTRIBUTION_FIELDS.forEach(f => entry[f] = 0);
     entry.sundries_title = "";
@@ -361,21 +397,20 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     const sundries: any[] = [];
 
     for (const r of txRows) {
-      const acct = String(r[cols.account] || "").trim();
-      if (!acct) continue;
+      const account = String(r[cols.account] || "").trim();
+      if (!account || account.startsWith("CIB:") || account.startsWith("COH:")) continue;
+
       const dr = num(r[cols.debit]);
       const cr = num(r[cols.credit]);
-      const memo = String(r[cols.particulars] || "").trim();
-      const rowParticulars = memo || mainParticulars;
+      if (dr === 0 && cr === 0) continue;
+
+      const rowParticulars = String(r[cols.particulars] || "").trim() || mainParticulars;
+      const route = routeCDBSubRow(account, dr, cr);
 
       validation.source_rows++;
       validation.source_total_debit = round2(validation.source_total_debit + dr);
       validation.source_total_credit = round2(validation.source_total_credit + cr);
 
-      // Skip the bank/fund row itself for distribution mapping
-      if (acct === fullFund || acct.startsWith("CIB:") || acct.startsWith("COH:")) continue;
-
-      const route = routeCDBSubRow(acct, dr, cr);
       if (route.col === "SUNDRIES") {
         sundries.push({ 
           title: route.acct_title, 
@@ -401,7 +436,6 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
           sundries_cr: s.cr, 
           _is_sub_row: idx > 0 
         };
-        // Zero out other columns for sub-rows to prevent double counting in totals
         if (idx > 0) {
           CDB_DISTRIBUTION_FIELDS.forEach(f => (row as any)[f] = 0);
           row.cash_amount = 0;
@@ -421,10 +455,8 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
 
     if (fullFund && cashAmount !== 0) pushGL(fullFund, 0, cashAmount, mainParticulars);
     
-    // Distribute to GL
     CDB_DISTRIBUTION_FIELDS.forEach(f => {
       if (entry[f] !== 0) {
-        // Reverse map col to account name (simplified for now, ideally use a reverse map)
         let acctName = f.replace(/_/g, " ").toUpperCase();
         pushGL(acctName, entry[f], 0, mainParticulars);
       }
@@ -441,15 +473,6 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     compareStrings(a.check_vno, b.check_vno)
   );
 
-  validation.routed_total_debit = round2(glEntries.reduce((s, e) => s + e.debit, 0));
-  validation.routed_total_credit = round2(glEntries.reduce((s, e) => s + e.credit, 0));
-  validation.gl_total_debit = validation.routed_total_debit;
-  validation.gl_total_credit = validation.routed_total_credit;
-
-  const t1 = performance.now();
-  console.log(`[UPLOAD DEBUG] Success: ${allRows.length} rows parsed in ${((t1 - t0) / 1000).toFixed(2)}s`);
-  return { rows: allRows, glEntries, monthYear: detectedMonthYear, validation };
-}
   validation.routed_total_debit = round2(glEntries.reduce((s, e) => s + e.debit, 0));
   validation.routed_total_credit = round2(glEntries.reduce((s, e) => s + e.credit, 0));
   validation.gl_total_debit = validation.routed_total_debit;
