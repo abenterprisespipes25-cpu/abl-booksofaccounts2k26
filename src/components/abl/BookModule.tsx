@@ -166,14 +166,27 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       const parsed = parseFloat(String(v).replace(/[,\s]/g, ""));
       return isNaN(parsed) ? 0 : parsed;
     };
+
+    let totalAmount = 0;
+    let totalVat = 0;
+    let totalItw = 0;
+    let totalItwTop10 = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      totalAmount += n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount || r.accounts_payable);
+      totalVat += n(r.input_tax || r.output_tax || r.vat_input_tax);
+      totalItw += n(r.itw_top_10t || r.itw_top10k || r.itw_compensation || r.itw_at_source);
+      totalItwTop10 += n(r.itw_top_10t || r.itw_top10k);
+    }
+
     return {
       count: rows.length,
-      totalAmount: rows.reduce((acc, r) => acc + n(r.ap_trade_cr || r.gross_sales || r.amount || r.cash_amount || r.accounts_payable), 0),
-      totalVat: rows.reduce((acc, r) => acc + n(r.input_tax || r.output_tax || r.vat_input_tax), 0),
-      totalItw: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top10k || r.itw_compensation || r.itw_at_source), 0),
-      totalItwTop10: rows.reduce((acc, r) => acc + n(r.itw_top_10t || r.itw_top10k), 0),
+      totalAmount,
+      totalVat,
+      totalItw,
+      totalItwTop10,
     };
-
   }, [rows]);
 
   const recapSundriesPB = useMemo(() => {
@@ -191,27 +204,32 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const recapSundries = useMemo(() => {
     if (moduleId !== "cdb") return [];
     const map = new Map<string, { account: string; dr: number; cr: number }>();
-    rows.forEach(r => {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       if (r.sundries_title) {
         const key = r.sundries_title;
-        const existing = map.get(key) || { account: key, dr: 0, cr: 0 };
+        let existing = map.get(key);
+        if (!existing) {
+          existing = { account: key, dr: 0, cr: 0 };
+          map.set(key, existing);
+        }
         existing.dr = round2(existing.dr + (Number(r.sundries_dr) || 0));
         existing.cr = round2(existing.cr + (Number(r.sundries_cr) || 0));
-        map.set(key, existing);
       }
-    });
+    }
     return Array.from(map.values()).sort((a, b) => a.account.localeCompare(b.account));
   }, [rows, moduleId]);
 
   const recapFunds = useMemo(() => {
     if (moduleId !== "cdb") return [];
     const map = new Map<string, number>();
-    rows.forEach(r => {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       if (r.fund && !r._is_sub_row) {
         const key = r.fund;
         map.set(key, round2((map.get(key) || 0) + (Number(r.cash_amount) || 0)));
       }
-    });
+    }
     return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
   }, [rows, moduleId]);
 
