@@ -530,20 +530,24 @@ export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any
     const header = detectHeaderConfig(rows);
     if (!header) continue;
 
+    const { cols } = header;
     const dataRows = rows.slice(header.rowIdx + 1);
     for (let i = 0; i < dataRows.length; i++) {
       if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
       const r = dataRows[i];
-      const { cols } = header;
+      if (!r || r.every(c => !String(c).trim())) continue;
+
       const iso = toISODate(r[cols.date]);
       if (!iso) continue;
       
-      const type = String(r[1] || "").trim(); // type usually next to date
       const inv = String(r[cols.vno] || "").trim();
       const customer = String(r[cols.payee] || "").trim();
-      const net = num(r[cols.debit] || r[cols.credit]); // simplistic
+      const dr = num(r[cols.debit]);
+      const cr = num(r[cols.credit]);
+      const net = dr || cr;
       if (net === 0) continue;
 
+      const type = String(r[cols.vno - 1] || "Invoice").trim(); // Fallback detection
       const my = monthYearFromISO(iso);
       if (!detectedMonthYear) detectedMonthYear = my;
       const folio = folioFor("SB", my);
@@ -576,11 +580,13 @@ export async function parseCashReceipts(buf: ArrayBuffer): Promise<ParsedResult<
     const header = detectHeaderConfig(rows);
     if (!header) continue;
 
+    const { cols } = header;
     const dataRows = rows.slice(header.rowIdx + 1);
     for (let i = 0; i < dataRows.length; i++) {
       if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
       const r = dataRows[i];
-      const { cols } = header;
+      if (!r || r.every(c => !String(c).trim())) continue;
+
       const iso = toISODate(r[cols.date]);
       if (!iso) continue;
       const orNo = String(r[cols.vno] || "").trim();
