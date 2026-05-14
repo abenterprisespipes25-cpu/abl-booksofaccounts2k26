@@ -873,25 +873,25 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
                 <button 
                   onClick={() => {
-                    let content = \`CDB UPLOAD VALIDATION REPORT\\n================================\\n\`;
-                    content += \`File: \${fileName}\\nDate Processed: \${new Date().toLocaleString()}\\nMonth Tab: \${parsed.monthYear}\\n\\n\`;
-                    content += \`ROWS\\nSource rows:    \${v.source_rows}\\nProcessed rows: \${v.routed_rows}\\nStatus: \${isRowsMatched ? 'PASS' : 'FAIL'}\\n\\n\`;
-                    content += \`SOURCE TOTALS\\nCol G (Debit) Total:  ₱\${fmtMoney(v.source_total_debit)}\\nCol H (Credit) Total: ₱\${fmtMoney(v.source_total_credit)}\\n\\n\`;
-                    content += \`CDB DISTRIBUTION TOTALS\\nTotal Routed Debit:   ₱\${fmtMoney(v.routed_total_debit)}\\nTotal Routed Credit:  ₱\${fmtMoney(v.routed_total_credit)}\\n\`;
-                    content += \`Debit Match:   \${isDrBalanced ? 'PASS' : 'FAIL'} (diff: ₱\${fmtMoney(Math.abs(v.source_total_debit - v.routed_total_debit))})\\n\`;
-                    content += \`Credit Match:  \${isCrBalanced ? 'PASS' : 'FAIL'} (diff: ₱\${fmtMoney(Math.abs(v.source_total_credit - v.routed_total_credit))})\\n\\n\`;
-                    content += \`GL DOUBLE-ENTRY CHECK\\nGL Total Debit:  ₱\${fmtMoney(totalDr)}\\nGL Total Credit: ₱\${fmtMoney(totalCr)}\\nBalance: \${isGLBalanced ? 'PASS' : 'FAIL'} (diff: ₱\${fmtMoney(diff)})\\n\\n\`;
-                    content += \`COLUMN BREAKDOWN\\n\`;
-                    Object.entries(v.column_coverage).forEach(([col, amt]) => { content += \`\${col} : ₱\${fmtMoney(Number(amt))}\\n\`; });
-                    content += \`\\nSUNDRIES / UNROUTED ENTRIES\\n\`;
-                    v.unrouted_entries.forEach((u: any) => { content += \`\${u.account} : ₱\${fmtMoney(u.amount)} → SUNDRIES\\n\`; });
-                    content += \`\\nOVERALL: \${allChecksPassed ? 'ALL CHECKS PASSED' : 'ISSUES FOUND'}\\n\`;
+                    let content = `CDB UPLOAD VALIDATION REPORT\n================================\n`;
+                    content += `File: ${fileName}\nDate Processed: ${new Date().toLocaleString()}\nMonth Tab: ${parsed.monthYear}\n\n`;
+                    content += `ROWS\nSource rows:    ${v.source_rows}\nProcessed rows: ${v.routed_rows}\nStatus: ${isRowsMatched ? 'PASS' : 'FAIL'}\n\n`;
+                    content += `SOURCE TOTALS\nCol G (Debit) Total:  ₱${fmtMoney(v.source_total_debit)}\nCol H (Credit) Total: ₱${fmtMoney(v.source_total_credit)}\n\n`;
+                    content += `CDB DISTRIBUTION TOTALS\nTotal Routed Debit:   ₱${fmtMoney(v.routed_total_debit)}\nTotal Routed Credit:  ₱${fmtMoney(v.routed_total_credit)}\n`;
+                    content += `Debit Match:   ${isDrBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(Math.abs(v.source_total_debit - v.routed_total_debit))})\n`;
+                    content += `Credit Match:  ${isCrBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(Math.abs(v.source_total_credit - v.routed_total_credit))})\n\n`;
+                    content += `GL DOUBLE-ENTRY CHECK\nGL Total Debit:  ₱${fmtMoney(totalDr)}\nGL Total Credit: ₱${fmtMoney(totalCr)}\nBalance: ${isGLBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(diff)})\n\n`;
+                    content += `COLUMN BREAKDOWN\n`;
+                    Object.entries(v.column_coverage).forEach(([col, amt]) => { content += `${col} : ₱${fmtMoney(Number(amt))}\n`; });
+                    content += `\nSUNDRIES / UNROUTED ENTRIES\n`;
+                    v.unrouted_entries.forEach((u: any) => { content += `${u.account} : ₱${fmtMoney(u.amount)} → SUNDRIES\n`; });
+                    content += `\nOVERALL: ${allChecksPassed ? 'ALL CHECKS PASSED' : 'ISSUES FOUND'}\n`;
                     
                     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = \`CDB_Validation_\${parsed.monthYear.replace(/\\s+/g, "_")}.txt\`;
+                    a.download = `CDB_Validation_${parsed.monthYear.replace(/\s+/g, "_")}.txt`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
