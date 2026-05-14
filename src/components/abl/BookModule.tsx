@@ -78,24 +78,28 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     }
 
     // Always fetch fresh from Supabase in background
-    const { data } = await supabase.from(meta.tableName).select("month_year").limit(10000);
-    const list = sortMonthYears((data ?? []).map((r: any) => r.month_year));
-    cache.months = list; // update cache
-    setMonths(list);
-    if (list.length && (!active || !list.includes(active))) setActive(list[list.length - 1]);
-    if (!list.length) { setActive(null); setRows([]); }
+    try {
+      const { data } = await supabase.from(meta.tableName).select("month_year").limit(20000);
+      const list = sortMonthYears(Array.from(new Set((data ?? []).map((r: any) => r.month_year))));
+      cache.months = list; // update cache
+      setMonths(list);
+      if (list.length && (!active || !list.includes(active))) setActive(list[list.length - 1]);
+      if (!list.length) { setActive(null); setRows([]); }
+    } catch (e) {
+      console.error("Error loading months:", e);
+    }
   }, [meta.tableName, active, moduleId]);
 
   const loadRows = useCallback(async (my: string, silent = false) => {
     const cache = getCacheForModule(moduleId);
 
-    // Serve cached rows instantly — skip the loading skeleton
-    if (cache.rows[my]) {
+    // Serve cached rows instantly — skip the loading skeleton if data exists
+    if (cache.rows[my] && !silent) {
       setRows(cache.rows[my]);
-      if (!silent) return; // already have data, no need for full re-fetch unless forced
+      return; 
     }
 
-    setLoading(!cache.rows[my]); // only show loader if no cached data
+    if (!silent) setLoading(true); // only show loader if we don't have data or are forcing a refresh
     setSyncing(true);
     try {
       // Fetch main entries
@@ -112,7 +116,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
       if (moduleId === "cdb") {
         resultRows = list;
-      } else if (moduleId === "purchase_book") {
+      } else if (moduleId === "purchase_book" && entryIds.length > 0) {
         const { data: sundries } = await supabase
           .from("pb_sundries")
           .select("*")
