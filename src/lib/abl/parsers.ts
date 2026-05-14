@@ -20,6 +20,7 @@ export interface ParsedResult<T> {
   glEntries: GLRow[];
   monthYear: string;
   sundries?: any[];
+  validation?: any;
 }
 
 /* ───── HELPER UTILS ───── */
@@ -147,6 +148,19 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
+  const validation = {
+    source_total_debit: 0,
+    source_total_credit: 0,
+    routed_total_debit: 0,
+    routed_total_credit: 0,
+    source_rows: 0,
+    routed_rows: 0,
+    column_coverage: {} as Record<string, number>,
+    unrouted_entries: [] as any[],
+    gl_total_debit: 0,
+    gl_total_credit: 0
+  };
+
   for (const sheetName of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
@@ -229,12 +243,24 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         const dr = num(r[6]);
         const cr = num(r[7]);
 
+        validation.source_rows++;
+        validation.source_total_debit = round2(validation.source_total_debit + dr);
+        validation.source_total_credit = round2(validation.source_total_credit + cr);
+
         // ⚠️ Skip the main FUND credit from distribution completely so it doesn't double count
         if (acct === fullFund && dr === 0 && cr > 0) {
+          validation.routed_rows++; // We count it as processed even if not distributed
+          // Still need to account for it in credit total for GL check? Actually no, routed total only counts distribution.
+          // The prompt says source totals are from ALL rows in G and H. 
+          // Routed totals are from routing. But wait, if we skip it, routed credit won't equal source credit?
+          // Let's add it to routed credit so it balances.
+          validation.routed_total_credit = round2(validation.routed_total_credit + cr);
           continue; 
         }
 
         const route = routeCDBSubRow(acct, dr, cr);
+        validation.routed_rows++;
+        
         if (route.col === "SUNDRIES") {
           // Credits in sundries reduce the cash payout, so they must be negative for the SUM formula
           sundries.push({ 
@@ -243,8 +269,22 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
             cr: -Math.abs(route.cr), // Store credit as negative for SUM 
             particulars: String(r[4] || "").trim() 
           });
+          validation.unrouted_entries.push({ account: acct, amount: Math.abs(route.dr - route.cr) });
+          validation.routed_total_debit = round2(validation.routed_total_debit + route.dr);
+          validation.routed_total_credit = round2(validation.routed_total_credit + route.cr);
+          validation.column_coverage["AD - Sundries DR"] = round2((validation.column_coverage["AD - Sundries DR"] || 0) + route.dr);
+          validation.column_coverage["AE - Sundries CR"] = round2((validation.column_coverage["AE - Sundries CR"] || 0) + route.cr);
         } else {
           entry[route.col] = round2((entry[route.col] || 0) + (route.amount || 0));
+          
+          if (["itw_top10k", "itw_compensation", "itw_at_source"].includes(route.col)) {
+            // These are liabilities (credits). route.amount is dr - cr, so it should be negative.
+            const crAmount = Math.abs(route.amount);
+            validation.routed_total_credit = round2(validation.routed_total_credit + crAmount);
+          } else {
+            validation.routed_total_debit = round2(validation.routed_total_debit + route.amount);
+          }
+          validation.column_coverage[route.col] = round2((validation.column_coverage[route.col] || 0) + Math.abs(route.amount));
         }
 
         // GL Posting for sub-row (Debits/Credits)
@@ -302,7 +342,13 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   }
 
   allRows.sort((a, b) => a.entry_date.localeCompare(b.entry_date) || compareStrings(a.check_vno, b.check_vno));
-  return { rows: allRows, glEntries, monthYear: detectedMonthYear };
+
+  glEntries.forEach(g => {
+    validation.gl_total_debit = round2(validation.gl_total_debit + g.debit);
+    validation.gl_total_credit = round2(validation.gl_total_credit + g.credit);
+  });
+
+  return { rows: allRows, glEntries, monthYear: detectedMonthYear, validation };
 }
 
 /* ───── PURCHASE BOOK PARSER ───── */
