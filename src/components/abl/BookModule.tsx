@@ -6,7 +6,7 @@ import { getCompanySettings } from "@/lib/abl/companySettings";
 
 
 import { parseCDB, parsePurchaseBook, parseSalesBook, parseCashReceipts, ParsedResult } from "@/lib/abl/parsers";
-import { exportExcel, exportPDF } from "@/lib/abl/exporters";
+import { exportExcel, exportPDF, exportRecapCDBExcel } from "@/lib/abl/exporters";
 import { MonthTabs } from "./MonthTabs";
 import { LedgerTable } from "./LedgerTable";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   const [pending, setPending] = useState<{ parsed: ParsedResult<any>; fileName: string; conflictMonths: string[] } | null>(null);
   const [glValidation, setGLValidation] = useState<{ parsed: ParsedResult<any>; fileName: string; totalDr: number; totalCr: number; diff: number } | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isRecapOpen, setIsRecapOpen] = useState(false);
+  const [isPrintingRecap, setIsPrintingRecap] = useState(false);
   const [cdbValidationReport, setCdbValidationReport] = useState<{ parsed: ParsedResult<any>; fileName: string; replace: boolean; diff: number; totalDr: number; totalCr: number } | null>(null);
   const [companySettings, setCompanySettings] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -672,14 +674,24 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           </button>
 
           {moduleId === "cdb" && (
-            <button 
-              disabled={!rows.length} 
-              onClick={() => setIsPreviewOpen(true)}
-              className="toolbar-btn print"
-            >
-              <Printer className="h-4 w-4" />
-              Print Preview
-            </button>
+            <>
+              <button 
+                disabled={!rows.length} 
+                onClick={() => setIsPreviewOpen(true)}
+                className="toolbar-btn print"
+              >
+                <Printer className="h-4 w-4" />
+                Print Preview
+              </button>
+              <button 
+                disabled={!recapSundries.length && !recapFunds.length} 
+                onClick={() => setIsRecapOpen(true)}
+                className="toolbar-btn"
+                style={{ borderColor: "rgba(170, 85, 255, 0.4)", color: "#aa55ff", backgroundColor: "rgba(170, 85, 255, 0.15)" }}
+              >
+                📊 Recapitulation
+              </button>
+            </>
           )}
 
           <button 
@@ -1027,6 +1039,107 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           font-weight: 700;
           cursor: pointer;
         }
+        
+        .recap-container {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          padding: 24px;
+          max-width: 1400px;
+          margin: 0 auto;
+        }
+        .recap-card {
+          background: rgba(0, 0, 0, 0.55);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 14px;
+          backdrop-filter: blur(16px);
+          padding: 20px;
+          overflow-x: auto;
+        }
+        .recap-title {
+          font-family: 'Syne', Arial, sans-serif;
+          font-size: 0.8rem;
+          font-weight: 800;
+          color: #00aaff;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          margin-bottom: 4px;
+        }
+        .recap-subtitle {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 0.65rem;
+          color: rgba(255,255,255,0.4);
+          margin-bottom: 14px;
+        }
+        .recap-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 0.72rem;
+        }
+        .recap-table th {
+          background: rgba(0, 170, 255, 0.12);
+          border: 1px solid rgba(0, 170, 255, 0.25);
+          color: #00aaff;
+          font-weight: 700;
+          padding: 6px 10px;
+          text-align: center;
+          font-size: 0.68rem;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+        .recap-table th.sundries-header {
+          background: rgba(170, 85, 255, 0.12);
+          border-color: rgba(170, 85, 255, 0.25);
+          color: #aa55ff;
+          letter-spacing: 0.2em;
+          font-size: 0.75rem;
+        }
+        .recap-table td {
+          border: 1px solid rgba(255,255,255,0.07);
+          padding: 4px 10px;
+          color: rgba(255,255,255,0.82);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 280px;
+        }
+        .recap-table td.account-name { text-align: left; font-size: 0.68rem; color: rgba(255,255,255,0.75); }
+        .recap-table td.amount { text-align: right; font-size: 0.72rem; color: rgba(255,255,255,0.9); font-variant-numeric: tabular-nums; }
+        .recap-table td.amount.debit  { color: #00e5a0; }
+        .recap-table td.amount.credit { color: #ff7c7c; }
+        .recap-table tr.grand-total td {
+          background: rgba(255,255,255,0.07);
+          border-top: 1px solid rgba(255,255,255,0.3);
+          font-weight: 700; color: #ffffff;
+        }
+        .recap-table tr:hover td { background: rgba(255,255,255,0.04); }
+        .check-row {
+          display: flex; justify-content: space-between; align-items: center;
+          padding: 8px 10px; border-radius: 8px; margin-top: 8px;
+          font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+        }
+        .recap-toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        
+        ${isPrintingRecap ? `
+          @media print {
+            body * { visibility: hidden; }
+            .recap-container, .recap-container * { visibility: visible; }
+            .recap-container {
+              position: absolute; top: 0; left: 0; width: 100%;
+              background: white !important; color: black !important; padding: 20px;
+            }
+            .recap-card { background: white !important; border: 1px solid #000 !important; backdrop-filter: none !important; margin-bottom: 20px; page-break-inside: avoid; }
+            .recap-table th { background: #e0e0e0 !important; color: #000 !important; border: 1px solid #000 !important; }
+            .recap-table td { color: #000 !important; border: 1px solid #000 !important; }
+            .recap-title { color: #000 !important; font-size: 10pt !important; }
+            .recap-subtitle { color: #000 !important; }
+            .check-row { color: #000 !important; border: 1px solid #000 !important; }
+            .recap-toolbar { display: none !important; }
+            @page { size: legal portrait; margin: 0.75in 1in; }
+          }
+        ` : ''}
       `}} />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1144,92 +1257,140 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         </div>
       )}
 
-      {moduleId === "cdb" && (recapSundries.length > 0 || recapFunds.length > 0) && (
-        <div className="mt-12 grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in slide-in-from-bottom-4 duration-700">
-          {recapSundries.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex flex-col">
-                <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-blue-500 decoration-4 underline-offset-8">
-                  Recapitulation of Sundry Accounts
-                </h3>
-                <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
-                  Summarized by account title for {active}
-                </p>
-              </div>
-              
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
-                      <th className="px-6 py-3 text-left border-r border-white/10">S U N D R I E S</th>
-                      <th className="px-6 py-3 text-right border-r border-white/10 w-32">Debit</th>
-                      <th className="px-6 py-3 text-right w-32">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {recapSundries.map((s, i) => (
-                      <tr key={i} className="hover:bg-white/5 transition-colors">
-                        <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{s.account}</td>
-                        <td className="px-6 py-2.5 text-right font-mono text-emerald-400 border-r border-white/5">{s.dr ? fmtMoney(s.dr) : "—"}</td>
-                        <td className="px-6 py-2.5 text-right font-mono text-rose-400">{s.cr ? fmtMoney(s.cr) : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-blue-500/10 text-white font-bold border-t border-white/20">
-                      <td className="px-6 py-3 text-right border-r border-white/5">TOTAL</td>
-                      <td className="px-6 py-3 text-right font-mono text-blue-400 border-r border-white/5">
-                        {fmtMoney(recapSundries.reduce((acc, s) => acc + s.dr, 0))}
-                      </td>
-                      <td className="px-6 py-3 text-right font-mono text-blue-400">
-                        {fmtMoney(recapSundries.reduce((acc, s) => acc + s.cr, 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+      {isRecapOpen && moduleId === "cdb" && (
+        <div className="fixed inset-0 z-50 bg-[#0a1628]/95 overflow-y-auto backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="recap-container">
+            <div className="flex justify-between items-center mb-4 no-print">
+              <h2 className="text-2xl font-black text-white uppercase tracking-widest">Recapitulation</h2>
+              <button onClick={() => setIsRecapOpen(false)} className="text-white/50 hover:text-white transition-colors bg-white/5 p-2 rounded-full">
+                <X size={24} />
+              </button>
             </div>
-          )}
+            
+            <div className="recap-toolbar no-print">
+               <button className="toolbar-btn export" onClick={() => exportRecapCDBExcel({
+                 companyName: companySettings?.company_name || "JHAYMARTS INDUSTRIES, INC.",
+                 monthYear: active || "",
+                 recapSundries,
+                 recapFunds
+               })}>
+                 💾 Export Recap Excel
+               </button>
+               <button className="toolbar-btn print" onClick={() => {
+                 setIsPrintingRecap(true);
+                 setTimeout(() => { window.print(); setIsPrintingRecap(false); }, 100);
+               }}>
+                 🖨 Print Recap
+               </button>
+               <button className="toolbar-btn" onClick={() => active && loadRows(active)}>
+                 🔄 Refresh
+               </button>
+            </div>
 
-          {recapFunds.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex flex-col">
-                <h3 className="text-lg font-black text-white tracking-tight uppercase underline decoration-emerald-500 decoration-4 underline-offset-8">
-                  Recapitulation of Bank Accounts
-                </h3>
-                <p className="text-[10px] text-white/40 font-bold mt-2 uppercase tracking-widest">
-                  Summarized by Fund for {active}
-                </p>
-              </div>
-              
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden shadow-xl">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-[#0f2744] text-white font-bold uppercase tracking-wider text-[10px]">
-                      <th className="px-6 py-3 text-left border-r border-white/10">F U N D</th>
-                      <th className="px-6 py-3 text-right w-32">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {recapFunds.map((f, i) => (
-                      <tr key={i} className="hover:bg-white/5 transition-colors">
-                        <td className="px-6 py-2.5 text-white/80 font-medium border-r border-white/5">{f.fund}</td>
-                        <td className="px-6 py-2.5 text-right font-mono text-emerald-400">{fmtMoney(f.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-emerald-500/10 text-white font-bold border-t border-white/20">
-                      <td className="px-6 py-3 text-right border-r border-white/5">TOTAL</td>
-                      <td className="px-6 py-3 text-right font-mono text-emerald-400">
-                        {fmtMoney(recapFunds.reduce((acc, f) => acc + f.amount, 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+               {/* SUNDRIES RECAP */}
+               <div className="recap-card">
+                 <div className="recap-title">{companySettings?.company_name || "JHAYMARTS INDUSTRIES, INC."}</div>
+                 <div className="recap-title">RECAPITULATION OF SUNDRY ACCOUNTS</div>
+                 <div className="recap-subtitle">— Cash Disbursements Book</div>
+                 <div className="recap-subtitle">{active ? active.toUpperCase() : "PERIOD N/A"}</div>
+                 
+                 <table className="recap-table mt-4">
+                   <thead>
+                     <tr>
+                       <th className="sundries-header text-left">S U N D R I E S</th>
+                       <th>DEBIT</th>
+                       <th>CREDIT</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {recapSundries.map((s, i) => (
+                       <tr key={i}>
+                         <td className="account-name" title={s.account}>{s.account}</td>
+                         <td className="amount debit">{s.dr ? fmtMoney(s.dr) : ""}</td>
+                         <td className="amount credit">{s.cr ? fmtMoney(s.cr) : ""}</td>
+                       </tr>
+                     ))}
+                     <tr className="grand-total">
+                       <td className="account-name text-right">GRAND TOTAL</td>
+                       <td className="amount debit">{fmtMoney(recapSundries.reduce((acc, s) => acc + s.dr, 0))}</td>
+                       <td className="amount credit">{fmtMoney(recapSundries.reduce((acc, s) => acc + s.cr, 0))}</td>
+                     </tr>
+                   </tbody>
+                 </table>
+                 
+                 <div className="mt-6 border-t border-white/20 pt-4">
+                   <div className="text-[10px] text-white/50 uppercase tracking-widest font-bold mb-2">CROSS-CHECK vs CDB Total:</div>
+                   {(() => {
+                     const recapDr = recapSundries.reduce((acc, s) => acc + s.dr, 0);
+                     const cdbDr = rows.reduce((acc, r) => acc + (Number(r.sundries_dr) || 0), 0);
+                     const diffDr = Math.abs(recapDr - cdbDr);
+                     const recapCr = recapSundries.reduce((acc, s) => acc + s.cr, 0);
+                     const cdbCr = rows.reduce((acc, r) => acc + (Math.abs(Number(r.sundries_cr)) || 0), 0);
+                     const diffCr = Math.abs(recapCr - cdbCr);
+
+                     return (
+                       <div className="flex flex-col gap-2">
+                         <div className={`check-row ${diffDr < 0.01 ? 'check-pass' : 'check-fail'}`}>
+                           <span>Recap DR - CDB Sundries DR =</span>
+                           <span>{diffDr < 0.01 ? `✅ ₱ ${fmtMoney(recapDr)}` : `⚠️ Diff ₱ ${fmtMoney(diffDr)}`}</span>
+                         </div>
+                         <div className={`check-row ${diffCr < 0.01 ? 'check-pass' : 'check-fail'}`}>
+                           <span>Recap CR - CDB Sundries CR =</span>
+                           <span>{diffCr < 0.01 ? `✅ ₱ ${fmtMoney(recapCr)}` : `⚠️ Diff ₱ ${fmtMoney(diffCr)}`}</span>
+                         </div>
+                       </div>
+                     );
+                   })()}
+                 </div>
+               </div>
+
+               {/* BANK RECAP */}
+               <div className="recap-card">
+                 <div className="recap-title">{companySettings?.company_name || "JHAYMARTS INDUSTRIES, INC."}</div>
+                 <div className="recap-title">RECAPITULATION OF BANK ACCOUNTS</div>
+                 <div className="recap-subtitle">— Cash Disbursements Book</div>
+                 <div className="recap-subtitle">{active ? active.toUpperCase() : "PERIOD N/A"}</div>
+                 
+                 <table className="recap-table mt-4">
+                   <thead>
+                     <tr>
+                       <th className="sundries-header text-left border-[#00aaff]/30 !text-[#00aaff] !bg-[#00aaff]/10">F U N D</th>
+                       <th>AMOUNT</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     {recapFunds.map((f, i) => (
+                       <tr key={i}>
+                         <td className="account-name">{f.fund}</td>
+                         <td className="amount text-white">{f.amount ? fmtMoney(f.amount) : "0.00"}</td>
+                       </tr>
+                     ))}
+                     <tr className="grand-total">
+                       <td className="account-name text-right">TOTAL</td>
+                       <td className="amount text-emerald-400">{fmtMoney(recapFunds.reduce((acc, f) => acc + f.amount, 0))}</td>
+                     </tr>
+                   </tbody>
+                 </table>
+
+                 <div className="mt-6 border-t border-white/20 pt-4">
+                   <div className="text-[10px] text-white/50 uppercase tracking-widest font-bold mb-2">CROSS-CHECK vs CDB Total:</div>
+                   {(() => {
+                     const bankTotal = recapFunds.reduce((acc, f) => acc + f.amount, 0);
+                     const cdbCash = rows.reduce((acc, r) => acc + (Number(r.cash_amount) || 0), 0);
+                     const diffBank = Math.abs(bankTotal - cdbCash);
+
+                     return (
+                       <div className={`check-row ${diffBank < 0.01 ? 'check-pass' : 'check-fail'}`}>
+                         <span>Bank Total - CDB Cash Amt =</span>
+                         <span>{diffBank < 0.01 ? `✅ ₱ ${fmtMoney(bankTotal)}` : `⚠️ Diff ₱ ${fmtMoney(diffBank)}`}</span>
+                       </div>
+                     );
+                   })()}
+                 </div>
+               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 
