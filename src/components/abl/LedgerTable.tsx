@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { ColumnDef } from "@/lib/abl/config";
 import { fmtDate, fmtMoney } from "@/lib/abl/format";
 
@@ -14,7 +14,7 @@ const fmtCell = (val: any, type: string) => {
 };
 
 /* ───── icon buttons ───── */
-const IconBtn = ({
+const IconBtn = React.memo(({
   onClick, title, color, children,
 }: { onClick: () => void; title: string; color: string; children: React.ReactNode }) => (
   <button
@@ -31,7 +31,81 @@ const IconBtn = ({
   >
     {children}
   </button>
-);
+));
+
+/* ───── Optimized Row Component ───── */
+const LedgerRow = React.memo(({ 
+  row, columns, ri, editingId, savingId, deletingId, 
+  onSave, onDelete, startEdit, cancelEdit, saveEdit, confirmDelete,
+  editData, setEditData, hasActions, TD
+}: any) => {
+  const isEditing = editingId === row.id;
+  const isSaving = savingId === row.id;
+  const isDeleting = deletingId === row.id;
+  const bg = ri % 2 === 0 ? "#ffffff" : "#f9fafb";
+  
+  return (
+    <tr style={{ background: bg }}>
+      {/* Action cell */}
+      {hasActions && (
+        <td style={{ ...TD("center"), background: bg, whiteSpace: "nowrap", minWidth: 90 }}>
+          {isEditing ? (
+            <>
+              <IconBtn onClick={() => saveEdit(row)} title="Save" color="#16a34a">
+                {isSaving ? "⏳" : "💾"}
+              </IconBtn>
+              <IconBtn onClick={cancelEdit} title="Cancel" color="#6b7280">✕</IconBtn>
+            </>
+          ) : (
+            <>
+              {onSave && (
+                <IconBtn onClick={() => startEdit(row)} title="Edit" color="#2563eb">✏️</IconBtn>
+              )}
+              {onDelete && (
+                <IconBtn onClick={() => confirmDelete(row)} title="Delete" color="#dc2626">
+                  {isDeleting ? "⏳" : "🗑"}
+                </IconBtn>
+              )}
+            </>
+          )}
+        </td>
+      )}
+      {/* Data cells */}
+      {columns.map((c: any, ci: number) => {
+        const val = isEditing ? (editData[c.field] ?? row[c.field]) : row[c.field];
+        const isEmpty = c.type === "currency" && (!val || Number(val) === 0);
+        const align = c.type === "currency" ? "right" : "left";
+
+        if (isEditing) {
+          return (
+            <td key={ci} style={{ ...TD(align, row._is_sub_row), background: "#fefce8", padding: "2px 4px" }}>
+              <input
+                type={(c.type === "currency" || c.type === "formula") ? "number" : c.type === "date" ? "date" : "text"}
+                value={c.type === "date"
+                  ? (editData[c.field] ?? row[c.field] ?? "").toString().substring(0, 10)
+                  : (editData[c.field] ?? row[c.field] ?? "")}
+                onChange={e => setEditData((prev: any) => ({ ...prev, [c.field]: (c.type === "currency" || c.type === "formula") ? parseFloat(e.target.value) || 0 : e.target.value }))}
+                style={{
+                  width: "100%", border: "1px solid #93c5fd", borderRadius: 4,
+                  padding: "2px 6px", fontSize: "0.75rem", textAlign: align,
+                  background: "#fff", outline: "none",
+                  minWidth: c.type === "currency" ? 80 : c.type === "date" ? 110 : 120,
+                }}
+              />
+            </td>
+          );
+        }
+        return (
+          <td key={ci} style={TD(align, row._is_sub_row)}>
+            {(c.type === "currency" || c.type === "formula")
+              ? (isEmpty ? "" : fmtCell(val, c.type))
+              : fmtCell(val, c.type)}
+          </td>
+        );
+      })}
+    </tr>
+  );
+});
 
 /* ───── props ───── */
 export interface LedgerTableProps {
@@ -52,31 +126,39 @@ export function LedgerTable({
   bookName, monthYear,
   onSave, onDelete, onPrint,
 }: LedgerTableProps) {
-  const [displayCount, setDisplayCount] = useState(200);
+  const [displayCount, setDisplayCount] = useState(150);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Record<string, any>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // Reset on rows change (month switch)
   useEffect(() => {
-    setDisplayCount(200);
+    setDisplayCount(150);
     setEditingId(null);
     setSearch("");
+    setDebouncedSearch("");
   }, [rows]);
 
   // Progressive loading
   useEffect(() => {
     if (rows.length > displayCount) {
-      const t = setTimeout(() => setDisplayCount(p => Math.min(p + 500, rows.length)), 50);
+      const t = setTimeout(() => setDisplayCount(p => Math.min(p + 300, rows.length)), 100);
       return () => clearTimeout(t);
     }
   }, [rows.length, displayCount]);
 
   // Filter by search
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = debouncedSearch.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter(r =>
       columns.some(c => {
@@ -85,7 +167,7 @@ export function LedgerTable({
         return String(v).toLowerCase().includes(q);
       })
     );
-  }, [rows, search, columns]);
+  }, [rows, debouncedSearch, columns]);
 
   // Totals
   const totals = useMemo(() => {
@@ -113,13 +195,13 @@ export function LedgerTable({
     padding: "6px 8px", border: BORDER,
     whiteSpace: "nowrap", letterSpacing: "0.04em",
   };
-  const TD = (align: string, isSubRow?: boolean): React.CSSProperties => ({
+  const TD = useCallback((align: string, isSubRow?: boolean): React.CSSProperties => ({
     padding: "3px 7px", border: BORDER, fontSize: "0.76rem",
     fontFamily: "Arial,Helvetica,sans-serif", color: "#000",
     textAlign: align as any,
     fontStyle: isSubRow ? "italic" : "normal",
     background: "inherit",
-  });
+  }), []);
   const TFOOT: React.CSSProperties = {
     padding: "5px 8px", border: BORDER, borderTop: "2.5px double #000",
     fontSize: "0.76rem", fontFamily: "Arial,Helvetica,sans-serif",
@@ -145,13 +227,13 @@ export function LedgerTable({
   const headerSpans = hasDoubleHeaders ? buildSpans() : [];
 
   // ── Edit helpers ──
-  const startEdit = (row: any) => {
+  const startEdit = useCallback((row: any) => {
     setEditingId(row.id);
     setEditData({ ...row });
-  };
-  const cancelEdit = () => { setEditingId(null); setEditData({}); };
+  }, []);
+  const cancelEdit = useCallback(() => { setEditingId(null); setEditData({}); }, []);
 
-  const saveEdit = async (row: any) => {
+  const saveEdit = useCallback(async (row: any) => {
     if (!onSave) return;
     setSavingId(row.id);
     try {
@@ -160,9 +242,9 @@ export function LedgerTable({
     } finally {
       setSavingId(null);
     }
-  };
+  }, [onSave, editData]);
 
-  const confirmDelete = async (row: any) => {
+  const confirmDelete = useCallback(async (row: any) => {
     if (!onDelete) return;
     if (!window.confirm(`Delete this entry? This cannot be undone.`)) return;
     setDeletingId(row.id);
@@ -171,7 +253,7 @@ export function LedgerTable({
     } finally {
       setDeletingId(null);
     }
-  };
+  }, [onDelete]);
 
   const hasActions = !!(onSave || onDelete);
   const sliced = filtered.slice(0, displayCount);
@@ -190,7 +272,7 @@ export function LedgerTable({
   }
 
   return (
-    <div>
+    <div className="animate-in fade-in duration-300">
       {/* ── Search Bar ── */}
       <div style={{
         display: "flex", alignItems: "center", gap: 10,
@@ -276,73 +358,17 @@ export function LedgerTable({
             </thead>
 
             <tbody>
-              {sliced.map((r, ri) => {
-                const isEditing = editingId === r.id;
-                const isSaving = savingId === r.id;
-                const isDeleting = deletingId === r.id;
-                const bg = ri % 2 === 0 ? "#ffffff" : "#f9fafb";
-                return (
-                  <tr key={r.id ?? ri} style={{ background: bg }}>
-                    {/* Action cell */}
-                    {hasActions && (
-                      <td style={{ ...TD("center"), background: bg, whiteSpace: "nowrap", minWidth: 90 }}>
-                        {isEditing ? (
-                          <>
-                            <IconBtn onClick={() => saveEdit(r)} title="Save" color="#16a34a">
-                              {isSaving ? "⏳" : "💾"}
-                            </IconBtn>
-                            <IconBtn onClick={cancelEdit} title="Cancel" color="#6b7280">✕</IconBtn>
-                          </>
-                        ) : (
-                          <>
-                            {onSave && (
-                              <IconBtn onClick={() => startEdit(r)} title="Edit" color="#2563eb">✏️</IconBtn>
-                            )}
-                            {onDelete && (
-                              <IconBtn onClick={() => confirmDelete(r)} title="Delete" color="#dc2626">
-                                {isDeleting ? "⏳" : "🗑"}
-                              </IconBtn>
-                            )}
-                          </>
-                        )}
-                      </td>
-                    )}
-                    {/* Data cells */}
-                    {columns.map((c, ci) => {
-                      const val = isEditing ? (editData[c.field] ?? r[c.field]) : r[c.field];
-                      const isEmpty = c.type === "currency" && (!val || Number(val) === 0);
-                      const align = c.type === "currency" ? "right" : "left";
-
-                      if (isEditing) {
-                        return (
-                          <td key={ci} style={{ ...TD(align, r._is_sub_row), background: "#fefce8", padding: "2px 4px" }}>
-                            <input
-                              type={(c.type === "currency" || c.type === "formula") ? "number" : c.type === "date" ? "date" : "text"}
-                              value={c.type === "date"
-                                ? (editData[c.field] ?? r[c.field] ?? "").toString().substring(0, 10)
-                                : (editData[c.field] ?? r[c.field] ?? "")}
-                              onChange={e => setEditData(prev => ({ ...prev, [c.field]: (c.type === "currency" || c.type === "formula") ? parseFloat(e.target.value) || 0 : e.target.value }))}
-                              style={{
-                                width: "100%", border: "1px solid #93c5fd", borderRadius: 4,
-                                padding: "2px 6px", fontSize: "0.75rem", textAlign: align,
-                                background: "#fff", outline: "none",
-                                minWidth: c.type === "currency" ? 80 : c.type === "date" ? 110 : 120,
-                              }}
-                            />
-                          </td>
-                        );
-                      }
-                      return (
-                        <td key={ci} style={TD(align, r._is_sub_row)}>
-                          {(c.type === "currency" || c.type === "formula")
-                            ? (isEmpty ? "" : fmtCell(val, c.type))
-                            : fmtCell(val, c.type)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
+              {sliced.map((r, ri) => (
+                <LedgerRow 
+                  key={r.id ?? ri}
+                  row={r} ri={ri} columns={columns}
+                  editingId={editingId} savingId={savingId} deletingId={deletingId}
+                  onSave={onSave} onDelete={onDelete}
+                  startEdit={startEdit} cancelEdit={cancelEdit} saveEdit={saveEdit} confirmDelete={confirmDelete}
+                  editData={editData} setEditData={setEditData}
+                  hasActions={hasActions} TD={TD}
+                />
+              ))}
             </tbody>
 
             {showTotals && (
