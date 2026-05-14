@@ -163,13 +163,15 @@ function routeCDBSubRow(account: string, colG: number, colH: number) {
     return { col: "advances", amount: colG || 0 };
   }
   // Everything else -> SUNDRIES
-  return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
-}
+  return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0/* ───── MAIN CDB PARSER ───── */
 
-/* ───── MAIN CDB PARSER ───── */
-
-export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
+export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
+  const t0 = performance.now();
+  console.log("[UPLOAD] Parsing started...");
+  
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  if (!wb.SheetNames.length) throw new Error("⚠️ No worksheets detected in Excel file.");
+
   const allRows: any[] = [];
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
@@ -188,19 +190,24 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
   };
 
   for (const sheetName of wb.SheetNames) {
+    console.log(`[UPLOAD] Worksheet detected: ${sheetName}`);
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
-    if (h < 0) continue;
-
-    const dataRows = rows.slice(h + 1);
+    
+    // Fallback: if findHeaderRow fails, start from row 0
+    const dataRows = h < 0 ? rows : rows.slice(h + 1);
     const groups: any[][] = [];
     let curGroup: any[] = [];
 
-    let validCount = 0;
+    let validRowCount = 0;
     let skippedCount = 0;
 
     // Step 2: Group sub-rows by transaction
-    for (const r of dataRows) {
+    for (let i = 0; i < dataRows.length; i++) {
+      // Yield to main thread every 500 rows
+      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+      
+      const r = dataRows[i];
       if (!r || r.every(c => String(c).trim() === "")) {
         skippedCount++;
         continue;
@@ -219,21 +226,23 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       if (iso && (payee || vno || cno || dr > 0 || cr > 0)) {
         if (curGroup.length > 0) groups.push(curGroup);
         curGroup = [r];
-        validCount++;
+        validRowCount++;
       } 
       // A sub-row must have an account and amounts
       else if (acct && (dr > 0 || cr > 0)) {
         if (curGroup.length > 0) curGroup.push(r);
-        validCount++;
+        validRowCount++;
       } else {
         skippedCount++;
       }
     }
     if (curGroup.length > 0) groups.push(curGroup);
     
-    console.log(`[UPLOAD] Worksheet: ${sheetName} | Total scanned: ${dataRows.length} | Valid rows: ${validCount} | Skipped: ${skippedCount}`);
+    console.log(`[UPLOAD] Worksheet processed: ${sheetName} | Total rows scanned: ${dataRows.length} | Valid rows: ${validRowCount} | Skipped: ${skippedCount}`);
 
-    for (const txRows of groups) {
+    for (let i = 0; i < groups.length; i++) {
+      if (i % 100 === 0) await new Promise(r => setTimeout(r, 0));
+      const txRows = groups[i];
       const first = txRows[0];
       const iso = toISODate(first[0]);
       const payee = String(first[1] || "").trim();
@@ -320,7 +329,6 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
       }
 
       const txGeneratedRows: any[] = [];
-      // Step 5: Compute cash_amount = SUM(cols I to AE)
       if (sundries.length === 0) {
         entry.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((s, f) => s + (num(entry[f]) || 0), 0));
         allRows.push(entry);
@@ -345,33 +353,24 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
         });
       }
 
-      // Step 7: GL Auto-posting (ACCOUNTANT LOGIC) 
       const pushGL = (account_name: string, account_type: string, debit: number, credit: number, particulars: string) => {
         if (debit === 0 && credit === 0) return;
-        glEntries.push({ month_year: my, entry_date: (iso || ""), account_name, particulars, folio, debit, credit, source_module: "CDB", source_ref: no });
+        glEntries.push({ month_year: my, entry_date: (iso || ""), account_name, particulars, folio, debit, credit, source_module: "CDB", source_ref: cno || vno });
       };
 
       for (const row of txGeneratedRows) {
         const p = row.particulars || payee;
-        
-        // 1. BANK/FUND ACCOUNT -> CR: cash_amount
         if (fullFund && row.cash_amount !== 0) {
           pushGL(fullFund, "ASSET", 0, Math.abs(row.cash_amount), "Cash Disbursements");
         }
-
         if (!row._is_sub_row) {
-          // 2. ACCOUNTS PAYABLE -> DR
           if (row.accounts_payable) pushGL("Accounts Payable", "LIABILITY", row.accounts_payable, 0, p);
-          // 3. INPUT VAT -> DR
           if (row.vat_input_tax) pushGL("Input VAT", "ASSET", row.vat_input_tax, 0, p);
-          // 4. WITHHOLDING TAX -> CR (stored as negative)
           if (row.itw_top10k) pushGL("Withholding Tax Payable - Expanded - Top Corp.", "LIABILITY", 0, Math.abs(row.itw_top10k), p);
           if (row.itw_compensation) pushGL("Withholding Tax Payable - Compensation", "LIABILITY", 0, Math.abs(row.itw_compensation), p);
           if (row.itw_at_source) pushGL("Withholding Tax Payable - Expanded - at Source", "LIABILITY", 0, Math.abs(row.itw_at_source), p);
-          // 5,6. SSS -> DR
           if (row.sss_prem) pushGL("SSS, PHIC and HDMF Premiums Payable", "LIABILITY", row.sss_prem, 0, p);
           if (row.sss_loan) pushGL("SSS and HDMF Loans Payable", "LIABILITY", row.sss_loan, 0, p);
-          // 7. EXPENSE ACCOUNTS -> DR
           if (row.direct_labor) pushGL("Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic", "EXPENSE", row.direct_labor, 0, p);
           if (row.overhead_labor) pushGL("Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic", "EXPENSE", row.overhead_labor, 0, p);
           if (row.clw_plant) pushGL("Cost of Manufacturing:Overhead:OH-Communication, Light & Water", "EXPENSE", row.clw_plant, 0, p);
@@ -384,11 +383,8 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
           if (row.travel_water) pushGL("Cost of Manufacturing:Overhead:OH-Travel and Transportation", "EXPENSE", row.travel_water, 0, p);
           if (row.sales_comm) pushGL("Selling Expenses:Selling-Commissions", "EXPENSE", row.sales_comm, 0, p);
           if (row.delivery_exp) pushGL("Selling Expenses:Selling-Delivery Expense", "EXPENSE", row.delivery_exp, 0, p);
-          // 8. ADVANCES -> DR
           if (row.advances) pushGL("Advances to Employees", "ASSET", row.advances, 0, p);
         }
-
-        // 9. SUNDRIES -> DR/CR
         if (row.sundries_title) {
           const sType = classifyAccount(row.sundries_title);
           if (row.sundries_dr) pushGL(row.sundries_title, sType, row.sundries_dr, 0, p);
@@ -398,6 +394,10 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     }
   }
 
+  if (allRows.length === 0) {
+    throw new Error("⚠️ File contains headers only. No transaction rows detected.");
+  }
+
   allRows.sort((a, b) => a.entry_date.localeCompare(b.entry_date) || compareStrings(a.check_vno, b.check_vno));
 
   glEntries.forEach(g => {
@@ -405,7 +405,12 @@ export function parseCDB(buf: ArrayBuffer): ParsedResult<any> {
     validation.gl_total_credit = round2(validation.gl_total_credit + g.credit);
   });
 
+  const t1 = performance.now();
+  console.log(`[UPLOAD] Valid transaction rows found: ${allRows.length}`);
+  console.log(`[UPLOAD] Processing completed in ${((t1 - t0) / 1000).toFixed(2)}s`);
+
   return { rows: allRows, glEntries, monthYear: detectedMonthYear, validation };
+}Rows, glEntries, monthYear: detectedMonthYear, validation };
 }
 
 /* ───── PURCHASE BOOK PARSER ───── */
