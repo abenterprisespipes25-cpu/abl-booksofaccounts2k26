@@ -36,16 +36,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
   };
 
   const getColHValue = (r: any) => {
-    // formula = SUM(I:AE)
-    const fields = [
-      'accounts_payable', 'vat_input_tax', 'direct_labor', 'overhead_labor',
-      'clw_plant', 'clw_admin', 'clw_sales', 'itw_top10k',
-      'itw_compensation', 'itw_at_source', 'sss_prem', 'sss_loan',
-      'outside_services', 'travel_admin', 'travel_sales', 'travel_const',
-      'travel_water', 'sales_comm', 'delivery_exp', 'advances',
-      'sundries_dr', 'sundries_cr'
-    ];
-    return fields.reduce((sum, f) => sum + (Number(r[f]) || 0), 0);
+    return Number(r.cash_amount) || 0;
   };
 
   const calculateGrandTotal = (field: string) => {
@@ -55,9 +46,9 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
   const colHGrandTotal = rows.reduce((sum, r) => sum + getColHValue(r), 0);
 
   const previewColWidths = {
-    A: 38, B: 110, C: 128, D: 42, E: 42, F: 42, G: 48, H: 52, I: 52, J: 52, K: 52,
-    L: 52, M: 52, N: 52, O: 52, P: 52, Q: 52, R: 52, S: 52, T: 52, U: 52, V: 52,
-    W: 52, X: 52, Y: 52, Z: 52, AA: 52, AB: 52, AC: 150, AD: 52, AE: 52
+    A: 42, B: 120, C: 140, D: 45, E: 45, F: 45, G: 45, H: 45, I: 45, J: 45, K: 45,
+    L: 45, M: 45, N: 45, O: 45, P: 45, Q: 45, R: 45, S: 45, T: 45, U: 45, V: 45,
+    W: 45, X: 45, Y: 45, Z: 45, AA: 45, AB: 45, AC: 160, AD: 45, AE: 45
   };
 
   return (
@@ -72,7 +63,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
             <X size={18} />
             <span>Close</span>
           </button>
-          <div className="text-white/60 text-sm">
+          <div className="text-white/60 text-sm font-bold uppercase tracking-widest">
             Print Preview — Legal Landscape
           </div>
         </div>
@@ -116,7 +107,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
             className={`preview-page ${pageIdx === currentPage ? "block" : "hidden print:block"}`}
           >
             {/* Header Content */}
-            <div className="mb-10"> {/* Margin for blank spacer rows (4-7) */}
+            <div className="mb-8">
               <div className="font-bold text-[10pt] font-arial">{companyName}</div>
               <div className="font-bold text-[10pt] font-arial uppercase">Cash Disbursements Book</div>
               <div className="font-bold text-[10pt] font-arial uppercase">For the Month of {monthYear}</div>
@@ -127,7 +118,8 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
               <thead>
                 <tr className="head-row-1">
                   <th style={{ width: previewColWidths.A }}>DATE</th>
-                  <th colSpan={2} style={{ width: previewColWidths.B + previewColWidths.C }}></th>
+                  <th style={{ width: previewColWidths.B }}></th>
+                  <th style={{ width: previewColWidths.C }}></th>
                   <th style={{ width: previewColWidths.D }}>PETTY CASH</th>
                   <th style={{ width: previewColWidths.E }}>CHECK</th>
                   <th style={{ width: previewColWidths.F }}></th>
@@ -146,18 +138,21 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                   <th style={{ width: previewColWidths.S }}>SSS, PHIC & HDMF</th>
                   <th style={{ width: previewColWidths.T }}>SSS/HDMF</th>
                   <th style={{ width: previewColWidths.U }}>OUTSIDE SERVICES</th>
-                  <th colSpan={2} style={{ width: previewColWidths.V + previewColWidths.W }}>TRAVEL & TRANSPORTATION</th>
-                  <th colSpan={2} style={{ width: previewColWidths.X + previewColWidths.Y }}>TRAVEL & TRANSPORTATION</th>
+                  <th style={{ width: previewColWidths.V }}>TRAVEL &</th>
+                  <th style={{ width: previewColWidths.W }}>TRAVEL &</th>
+                  <th style={{ width: previewColWidths.X }}>TRAVEL &</th>
+                  <th style={{ width: previewColWidths.Y }}>TRAVEL &</th>
                   <th style={{ width: previewColWidths.Z }}>SALES COMM</th>
                   <th style={{ width: previewColWidths.AA }}>Delivery</th>
                   <th style={{ width: previewColWidths.AB }}>ADVANCES TO</th>
                   <th style={{ width: previewColWidths.AC }}>S  U  N  D  R  I  E  S</th>
-                  <th colSpan={2} style={{ width: previewColWidths.AD + previewColWidths.AE }}>A M O U N T</th>
+                  <th style={{ width: previewColWidths.AD }}>AMOUNT</th>
+                  <th style={{ width: previewColWidths.AE }}>AMOUNT</th>
                 </tr>
                 <tr className="head-row-2">
-                  <th>{monthYear ? `${monthYear.substring(0, 3).toUpperCase()}., ${monthYear.split(' ')[1]}` : ""}</th>
-                  <th style={{ width: previewColWidths.B }}>PAYEE</th>
-                  <th style={{ width: previewColWidths.C }}>PARTICULARS</th>
+                  <th></th>
+                  <th>PAYEE</th>
+                  <th>PARTICULARS</th>
                   <th>VOUCHER NO.</th>
                   <th>VOUCHER NO.</th>
                   <th>CHECK NO.</th>
@@ -166,7 +161,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                   <th>PAYABLE-TRADE</th>
                   <th>INPUT TAX</th>
                   <th>LABOR / BASIC</th>
-                  <th>LABOR  / BASIC</th>
+                  <th>LABOR / BASIC</th>
                   <th>WATER-PLANT</th>
                   <th>WATER-ADMIN</th>
                   <th>WATER-SALES</th>
@@ -176,24 +171,24 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                   <th>PREM. PAYABLE</th>
                   <th>LOAN PAYABLE</th>
                   <th>Construction</th>
-                  <th style={{ width: previewColWidths.V }}>ADMIN.</th>
-                  <th style={{ width: previewColWidths.W }}>SALES</th>
-                  <th style={{ width: previewColWidths.X }}>CONSTRUCTION</th>
-                  <th style={{ width: previewColWidths.Y }}>WATER</th>
+                  <th>TRANSPORTATION ADMIN.</th>
+                  <th>TRANSPORTATION SALES</th>
+                  <th>TRANSPORTATION CONST.</th>
+                  <th>TRANSPORTATION WATER</th>
                   <th>3RD PARTY PAY</th>
                   <th>Expenses</th>
                   <th>OFFICERS/EMP.</th>
                   <th>ACCT. TITLE</th>
-                  <th style={{ width: previewColWidths.AD }}>DR</th>
-                  <th style={{ width: previewColWidths.AE }}>CR.</th>
+                  <th>DR</th>
+                  <th>CR.</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((r, idx) => (
                   <tr key={idx}>
                     <td className="center">{fmtDate(r.entry_date)}</td>
-                    <td className="left">{r.payee}</td>
-                    <td className="left">{r.particulars}</td>
+                    <td className="left truncate">{r.payee}</td>
+                    <td className="left truncate">{r.particulars}</td>
                     <td className="center">{r.petty_cash_vno}</td>
                     <td className="center">{r.check_vno}</td>
                     <td className="center">{r.check_no}</td>
@@ -219,7 +214,7 @@ export const CDBPrintPreview: React.FC<CDBPrintPreviewProps> = ({
                     <td className="num">{fmtMoney(r.sales_comm)}</td>
                     <td className="num">{fmtMoney(r.delivery_exp)}</td>
                     <td className="num">{fmtMoney(r.advances)}</td>
-                    <td className="left">{r.sundries_title}</td>
+                    <td className="left truncate">{r.sundries_title}</td>
                     <td className="num">{fmtMoney(r.sundries_dr)}</td>
                     <td className="num">{fmtMoney(r.sundries_cr)}</td>
                   </tr>

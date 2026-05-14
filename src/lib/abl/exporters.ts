@@ -393,44 +393,42 @@ export async function exportCDBExcel(opts: {
     row.height = 16.5;
   });
 
-  // Blank spacer rows (4-7)
-  for (let i = 4; i <= 7; i++) {
-    ws.addRow([]);
-    ws.getRow(i).height = 16.5;
-  }
+  // Row 4 (blank)
+  ws.addRow([]);
+  ws.getRow(4).height = 16.5;
 
-  // Header Row 8
-  const row8Vals = Array(31).fill("");
-  row8Vals[0] = "DATE";
-  row8Vals[3] = "PETTY CASH";
-  row8Vals[4] = "CHECK";
-  row8Vals[7] = "CASH";
-  row8Vals[8] = "ACCOUNTS";
-  row8Vals[9] = "VAT";
-  row8Vals[10] = "DIRECT";
-  row8Vals[11] = "OVERHEAD";
-  row8Vals[12] = "COMM., LIGHT &";
-  row8Vals[13] = "COMM., LIGHT &";
-  row8Vals[14] = "COMM., LIGHT &";
-  row8Vals[15] = "ITW";
-  row8Vals[16] = "ITW";
-  row8Vals[17] = "ITW";
-  row8Vals[18] = "SSS, PHIC & HDMF";
-  row8Vals[19] = "SSS/HDMF";
-  row8Vals[20] = "OUTSIDE SERVICES";
-  row8Vals[21] = "TRAVEL & TRANSPORTATION";
-  row8Vals[23] = "TRAVEL & TRANSPORTATION";
-  row8Vals[25] = "SALES COMM";
-  row8Vals[26] = "Delivery";
-  row8Vals[27] = "ADVANCES TO";
-  row8Vals[28] = "S  U  N  D  R  I  E  S";
-  row8Vals[29] = "A M O U N T";
-  ws.addRow(row8Vals);
-  ws.mergeCells("V8:W8");
-  ws.mergeCells("X8:Y8");
-  ws.mergeCells("AD8:AE8"); // Added AD8:AE8 merge as implied by spec
-  ws.getRow(8).height = 16.5;
-  ws.getRow(8).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+  // Header Row 5 (header1)
+  const row5Vals = Array(31).fill("");
+  row5Vals[0] = "DATE";
+  row5Vals[3] = "PETTY CASH";
+  row5Vals[4] = "CHECK";
+  row5Vals[7] = "CASH";
+  row5Vals[8] = "ACCOUNTS";
+  row5Vals[9] = "VAT";
+  row5Vals[10] = "DIRECT";
+  row5Vals[11] = "OVERHEAD";
+  row5Vals[12] = "COMM., LIGHT &";
+  row5Vals[13] = "COMM., LIGHT &";
+  row5Vals[14] = "COMM., LIGHT &";
+  row5Vals[15] = "ITW";
+  row5Vals[16] = "ITW";
+  row5Vals[17] = "ITW";
+  row5Vals[18] = "SSS, PHIC & HDMF";
+  row5Vals[19] = "SSS/HDMF";
+  row5Vals[20] = "OUTSIDE SERVICES";
+  row5Vals[21] = "TRAVEL &";
+  row5Vals[22] = "TRAVEL &";
+  row5Vals[23] = "TRAVEL &";
+  row5Vals[24] = "TRAVEL &";
+  row5Vals[25] = "SALES COMM";
+  row5Vals[26] = "Delivery";
+  row5Vals[27] = "ADVANCES TO";
+  row5Vals[28] = "S  U  N  D  R  I  E  S";
+  row5Vals[29] = "AMOUNT";
+  row5Vals[30] = "AMOUNT";
+  ws.addRow(row5Vals);
+  ws.getRow(5).height = 16.5;
+  ws.getRow(5).eachCell({ includeEmpty: true }, (cell, colNumber) => {
     if (colNumber <= 31) {
       cell.font = fontArial8Bold;
       cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -438,19 +436,20 @@ export async function exportCDBExcel(opts: {
     }
   });
 
-  // Header Row 9
-  const row9Vals = [
-    monthYear.substring(0, 3).toUpperCase() + "., " + monthYear.split(" ")[1],
+  // Header Row 6 (header2)
+  const row6Vals = [
+    "",
     "PAYEE", "PARTICULARS", "VOUCHER NO.", "VOUCHER NO.", "CHECK NO.", "FUND", "AMOUNT",
-    "PAYABLE-TRADE", "INPUT TAX", "LABOR / BASIC", "LABOR  / BASIC", "WATER-PLANT",
+    "PAYABLE-TRADE", "INPUT TAX", "LABOR / BASIC", "LABOR / BASIC", "WATER-PLANT",
     "WATER-ADMIN", "WATER-SALES", "TOP 10K CORP.", "COMPENSATION", "AT SOURCE",
-    "PREM. PAYABLE", "LOAN PAYABLE", "Construction", "ADMIN.", "SALES",
-    "CONSTRUCTION", "WATER", "3RD PARTY PAY", "Expenses", "OFFICERS/EMP.",
+    "PREM. PAYABLE", "LOAN PAYABLE", "Construction", 
+    "TRANSPORTATION ADMIN.", "TRANSPORTATION SALES", "TRANSPORTATION CONST.", "TRANSPORTATION WATER",
+    "3RD PARTY PAY", "Expenses", "OFFICERS/EMP.",
     "ACCT. TITLE", "DR", "CR."
   ];
-  ws.addRow(row9Vals);
-  ws.getRow(9).height = 16.5;
-  ws.getRow(9).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+  ws.addRow(row6Vals);
+  ws.getRow(6).height = 16.5;
+  ws.getRow(6).eachCell({ includeEmpty: true }, (cell, colNumber) => {
     if (colNumber <= 31) {
       cell.font = fontArial8Bold;
       cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -461,7 +460,6 @@ export async function exportCDBExcel(opts: {
   // Data Rows
   const numFmt = '#,##0.00';
   rows.forEach((r, idx) => {
-    const rowIndex = idx + 10;
     const rowData = [
       fmtDate(r.entry_date),
       r.payee || "",
@@ -470,7 +468,7 @@ export async function exportCDBExcel(opts: {
       r.check_vno || "",
       r.check_no || "",
       r.fund_label || "",
-      { formula: `SUM(I${rowIndex}:AE${rowIndex})` }, // Col H
+      r.cash_amount || 0,
       r.accounts_payable || 0,
       r.vat_input_tax || 0,
       r.direct_labor || 0,
@@ -502,10 +500,8 @@ export async function exportCDBExcel(opts: {
         cell.font = fontArial10;
         cell.border = thinBorder;
         if (colNumber === 1) cell.alignment = { horizontal: "center" };
-        else if (colNumber === 2 || colNumber === 3) cell.alignment = { horizontal: "left" };
-        else if (colNumber === 4) cell.alignment = { horizontal: "center" };
-        else if (colNumber === 5) cell.alignment = { horizontal: "right" };
-        else if (colNumber === 6 || colNumber === 7) cell.alignment = { horizontal: "center" };
+        else if (colNumber <= 7) cell.alignment = { horizontal: "left" };
+        else if (colNumber === 29) cell.alignment = { horizontal: "left" };
         else {
           cell.alignment = { horizontal: "right" };
           cell.numFmt = numFmt;

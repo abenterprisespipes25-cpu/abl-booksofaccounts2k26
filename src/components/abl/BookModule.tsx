@@ -266,18 +266,25 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   // Subscribe to real-time changes
   useEffect(() => {
     let debounceTimer: any = null;
+    const tables = ['cdb_entries', 'purchase_book_entries', 'sales_book_entries', 'cash_receipts_entries', 'gl_entries', 'company_settings'];
+    
     const channel = supabase
-      .channel(`${moduleId}_realtime`)
+      .channel('global_realtime')
       .on(
         'postgres_changes' as any,
-        { event: '*', schema: 'public', table: meta.tableName } as any,
+        { event: '*', schema: 'public' } as any,
         (payload) => {
-          console.log('Real-time change received:', payload);
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            loadMonths();
-            if (active) loadRows(active);
-          }, 300);
+          if (tables.includes(payload.table)) {
+            console.log(`Real-time change in ${payload.table}:`, payload);
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+              if (payload.table === 'company_settings') {
+                getCompanySettings().then(setCompanySettings);
+              }
+              loadMonths(true);
+              if (active) loadRows(active, true);
+            }, 300);
+          }
         }
       )
       .subscribe();
@@ -285,7 +292,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [moduleId, meta.tableName, active, loadMonths, loadRows]);
+  }, [active, loadMonths, loadRows]);
 
   useEffect(() => { loadMonths(true); }, [loadMonths]);
   useEffect(() => { if (active) loadRows(active); }, [active, loadRows]);
@@ -299,7 +306,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       const { id, _is_sub_row, ...cleanRow } = updatedRow;
       const actualId = _is_sub_row ? id.split("-sundry-")[0] : id;
 
-      // Filter out non-database fields (like _is_sub_row, sundries_acct_title, etc if they aren't in the main table)
       const dbFields = meta.columns.map(c => c.field);
       const dataToUpdate: any = { id: actualId };
       dbFields.forEach(f => {
@@ -312,22 +318,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         .eq("id", actualId);
 
       if (error) throw error;
-      
-      // Sync with GL
-      // We'll delete and re-insert the GL entry for this specific row
-      // We need a way to identify the GL entry. Usually source_module + month_year + particulars/date?
-      // Better: we should have a source_ref in gl_entries. 
-      // Let's check if gl_entries has a reference to the book entry id.
-      // Looking at commit() logic, it seems it doesn't store the source id.
-      // However, we can try to find it by date, particulars, and amount.
-      
-      // Actually, a better way is to update the GL entry if it matches.
-      // But since we don't have a direct ID link yet in the existing schema's GL insertion,
-      // we'll skip the automated sync for now to avoid accidental deletions of other rows,
-      // OR we add a source_id column to gl_entries.
-      
-      // For now, let's just update the book entry as requested. 
-      // If the user wants full sync, we'd need a schema change for gl_entries to include source_id.
       
       toast.success("Record updated successfully");
       invalidateCache(moduleId, active!);
@@ -350,7 +340,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
       if (error) throw error;
       
-      // Cleanup associated sundries for PB
       if (moduleId === "purchase_book") {
         await supabase.from("pb_sundries").delete().eq("pb_entry_id", actualId);
       }
@@ -365,17 +354,9 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   };
 
   async function handleFile(file: File) {
-    if (moduleId === "purchase_book" && !file.name.toLowerCase().includes("purchase+book")) {
-      toast.error("Invalid file. Please upload 'Purchase Book' file only.");
-      return;
-    }
-
     setUploading(true);
     try {
-
       const buf = await file.arrayBuffer();
-      
-      // Prevent UI freezing by yielding back to the main thread before heavy parsing
       await new Promise(r => setTimeout(r, 50));
       
       const parsed = await PARSERS[moduleId](buf);
@@ -404,7 +385,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
   }
 
   function validateAndCommit(parsed: ParsedResult<any>, fileName: string, replace = false) {
-    // Double-entry validation
     const totalDr = round2(parsed.glEntries.reduce((s, e) => s + (e.debit || 0), 0));
     const totalCr = round2(parsed.glEntries.reduce((s, e) => s + (e.credit || 0), 0));
     const diff = Math.abs(totalDr - totalCr);
@@ -432,9 +412,16 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     // OPTIMISTIC UI: Immediately show rows if they match the active month
     const monthsInFile = Array.from(new Set(parsed.rows.map((r: any) => r.month_year))).filter(Boolean) as string[];
     const targetMonth = monthsInFile[monthsInFile.length - 1];
+    const prevRows = [...rows];
     
     if (targetMonth === active) {
-      setRows(prev => [...prev, ...parsed.rows.filter((r: any) => r.month_year === active)]);
+      setRows(prev => {
+        const newRows = [...prev, ...parsed.rows.filter((r: any) => r.month_year === active)];
+        return newRows.sort((a, b) => 
+          (a.entry_date || "").localeCompare(b.entry_date || "") || 
+          (a.check_vno || "").localeCompare(b.check_vno || "")
+        );
+      });
     }
 
     try {
@@ -450,23 +437,12 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         }
       }
 
-      // CDB sundries are embedded in rows — no separate sundry table insert needed.
-      // Purchase Book still uses pb_sundries separate table.
-      if (moduleId === "purchase_book" && parsed.sundries && parsed.sundries.length > 0) {
-        if (replace) {
-          const { data: existing } = await supabase.from(meta.tableName).select("id");
-          const ids = (existing ?? []).map((r: any) => r.id);
-          if (ids.length > 0) await supabase.from("pb_sundries").delete().in("pb_entry_id", ids);
-        }
-      }
-
       const BATCH = 1000;
       for (let i = 0; i < parsed.rows.length; i += BATCH) {
         const chunk = parsed.rows.slice(i, i + BATCH);
         const { error } = await supabase.from(meta.tableName).insert(chunk as any);
         if (error) throw error;
       }
-
 
       if (moduleId === "purchase_book" && parsed.sundries && parsed.sundries.length > 0) {
         for (let i = 0; i < parsed.sundries.length; i += BATCH) {
@@ -476,7 +452,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         }
       }
 
-
       if (parsed.glEntries.length) {
         for (let i = 0; i < parsed.glEntries.length; i += BATCH) {
           const chunk = parsed.glEntries.slice(i, i + BATCH);
@@ -485,7 +460,6 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         }
       }
 
-
       for (const my of monthsInFile) {
         const rowCount = parsed.rows.filter((r: any) => r.month_year === my).length;
         await supabase.from("uploaded_files").insert({
@@ -493,25 +467,18 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         } as any);
       }
 
-      const totalDr = round2(parsed.glEntries.reduce((s, e) => s + (e.debit || 0), 0));
-      const totalCr = round2(parsed.glEntries.reduce((s, e) => s + (e.credit || 0), 0));
-      
-      toast.success(`✅ Upload Successful\n${parsed.rows.length} rows parsed\nDebit Total: ₱${totalDr.toLocaleString()}\nCredit Total: ₱${totalCr.toLocaleString()}`, { 
+      toast.success(`✅ Cash Disbursements Book updated!\n${parsed.rows.length} entries added for ${targetMonth}`, { 
         id: loaderId,
         duration: 6000 
       });
       
-      // Invalidate cache for all uploaded months so fresh data is loaded next visit
       monthsInFile.forEach(my => invalidateCache(moduleId, my));
-
       await loadMonths();
-      // Auto-switch to the month of the uploaded data
       if (targetMonth) setActive(targetMonth);
       
     } catch (e: any) {
       toast.error(`❌ Save failed: ${e.message || e}`, { id: loaderId });
-      // Rollback optimistic update
-      if (active) loadRows(active);
+      setRows(prevRows); // Rollback
     } finally {
       setUploading(false);
       setPending(null);
@@ -1171,6 +1138,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
           }
         ` : ''}
       `}} />
+
+      <SyncStatusBadge table={meta.tableName} />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">

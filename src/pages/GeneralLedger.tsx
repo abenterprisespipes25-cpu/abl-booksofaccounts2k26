@@ -305,10 +305,15 @@ export default function GeneralLedger() {
 
   useEffect(() => {
     fetchData();
-    const ch = supabase.channel("gl_realtime2")
-      .on("postgres_changes" as any, { event:"*", schema:"public", table:"gl_entries" } as any, () => {
-        fetchData(true);
-        toast.info("General Ledger updated.", { id:"gl-rt" });
+    const tables = ['cdb_entries', 'purchase_book_entries', 'sales_book_entries', 'cash_receipts_entries', 'gl_entries', 'company_settings'];
+    const ch = supabase.channel("gl_global_realtime")
+      .on("postgres_changes" as any, { event:"*", schema:"public" } as any, (payload) => {
+        if (tables.includes(payload.table)) {
+          fetchData(true);
+          if (payload.table === 'gl_entries') {
+            toast.info("General Ledger updated.", { id:"gl-rt" });
+          }
+        }
       }).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [fetchData]);

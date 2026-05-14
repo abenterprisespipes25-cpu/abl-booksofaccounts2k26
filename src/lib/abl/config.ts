@@ -8,37 +8,37 @@ export interface ColumnDef {
 }
 
 export const CDB_COLUMNS: ColumnDef[] = [
-  { header: "DATE", header1: "DATE", header2: "[MONTH YEAR]", field: "entry_date", type: "date", width: 8 },
+  { header: "DATE", header1: "DATE", header2: "", field: "entry_date", type: "date", width: 8 },
   { header: "PAYEE", header1: "", header2: "PAYEE", field: "payee", type: "text", width: 25 },
   { header: "PARTICULARS", header1: "", header2: "PARTICULARS", field: "particulars", type: "text", width: 30 },
   { header: "PETTY CASH VOUCHER NO.", header1: "PETTY CASH", header2: "VOUCHER NO.", field: "petty_cash_vno", type: "text", width: 10 },
   { header: "CHECK VOUCHER NO.", header1: "CHECK", header2: "VOUCHER NO.", field: "check_vno", type: "text", width: 10 },
   { header: "CHECK NO.", header1: "", header2: "CHECK NO.", field: "check_no", type: "text", width: 10 },
-  { header: "FUND", header1: "", header2: "FUND", field: "fund_label", type: "text", width: 12 },
-  { header: "CASH AMOUNT", header1: "CASH", header2: "AMOUNT", field: "cash_amount", type: "formula", width: 12 },
-  { header: "ACCOUNTS PAYABLE-TRADE", header1: "ACCOUNTS", header2: "PAYABLE-TRADE", field: "accounts_payable", type: "currency", width: 12 },
-  { header: "VAT INPUT TAX", header1: "VAT", header2: "INPUT TAX", field: "vat_input_tax", type: "currency", width: 12 },
-  { header: "DIRECT LABOR / BASIC", header1: "DIRECT", header2: "LABOR / BASIC", field: "direct_labor", type: "currency", width: 12 },
-  { header: "OVERHEAD LABOR / BASIC", header1: "OVERHEAD", header2: "LABOR / BASIC", field: "overhead_labor", type: "currency", width: 12 },
-  { header: "COMM., LIGHT & WATER-PLANT", header1: "COMM., LIGHT &", header2: "WATER-PLANT", field: "clw_plant", type: "currency", width: 12 },
-  { header: "COMM., LIGHT & WATER-ADMIN", header1: "COMM., LIGHT &", header2: "WATER-ADMIN", field: "clw_admin", type: "currency", width: 12 },
-  { header: "COMM., LIGHT & WATER-SALES", header1: "COMM., LIGHT &", header2: "WATER-SALES", field: "clw_sales", type: "currency", width: 12 },
-  { header: "ITW TOP 10K CORP.", header1: "ITW", header2: "TOP 10K CORP.", field: "itw_top10k", type: "currency", width: 12 },
-  { header: "ITW COMPENSATION", header1: "ITW", header2: "COMPENSATION", field: "itw_compensation", type: "currency", width: 12 },
-  { header: "ITW AT SOURCE", header1: "ITW", header2: "AT SOURCE", field: "itw_at_source", type: "currency", width: 12 },
-  { header: "SSS, PHIC & HDMF PREM. PAYABLE", header1: "SSS, PHIC & HDMF", header2: "PREM. PAYABLE", field: "sss_prem", type: "currency", width: 12 },
-  { header: "SSS/HDMF LOAN PAYABLE", header1: "SSS/HDMF", header2: "LOAN PAYABLE", field: "sss_loan", type: "currency", width: 12 },
-  { header: "OUTSIDE SERVICES Construction", header1: "OUTSIDE SERVICES", header2: "Construction", field: "outside_services", type: "currency", width: 12 },
-  { header: "TRAVEL & TRANSPORTATION ADMIN.", header1: "TRAVEL & TRANSPORTATION", header2: "ADMIN.", field: "travel_admin", type: "currency", width: 12 },
-  { header: "SALES", header1: "", header2: "SALES", field: "travel_sales", type: "currency", width: 12 },
-  { header: "TRAVEL & TRANSPORTATION CONSTRUCTION", header1: "TRAVEL & TRANSPORTATION", header2: "CONSTRUCTION", field: "travel_const", type: "currency", width: 12 },
-  { header: "WATER", header1: "", header2: "WATER", field: "travel_water", type: "currency", width: 12 },
-  { header: "SALES COMM 3RD PARTY PAY", header1: "SALES COMM", header2: "3RD PARTY PAY", field: "sales_comm", type: "currency", width: 12 },
-  { header: "Delivery Expenses", header1: "Delivery", header2: "Expenses", field: "delivery_exp", type: "currency", width: 12 },
-  { header: "ADVANCES TO OFFICERS/EMP.", header1: "ADVANCES TO", header2: "OFFICERS/EMP.", field: "advances", type: "currency", width: 12 },
+  { header: "FUND", header1: "", header2: "FUND", field: "fund_label", type: "text", width: 10 },
+  { header: "CASH AMOUNT", header1: "CASH", header2: "AMOUNT", field: "cash_amount", type: "currency", width: 10 },
+  { header: "ACCOUNTS PAYABLE-TRADE", header1: "ACCOUNTS", header2: "PAYABLE-TRADE", field: "accounts_payable", type: "currency", width: 10 },
+  { header: "VAT INPUT TAX", header1: "VAT", header2: "INPUT TAX", field: "vat_input_tax", type: "currency", width: 10 },
+  { header: "DIRECT LABOR / BASIC", header1: "DIRECT", header2: "LABOR / BASIC", field: "direct_labor", type: "currency", width: 10 },
+  { header: "OVERHEAD LABOR / BASIC", header1: "OVERHEAD", header2: "LABOR / BASIC", field: "overhead_labor", type: "currency", width: 10 },
+  { header: "COMM., LIGHT & WATER-PLANT", header1: "COMM., LIGHT &", header2: "WATER-PLANT", field: "clw_plant", type: "currency", width: 10 },
+  { header: "COMM., LIGHT & WATER-ADMIN", header1: "COMM., LIGHT &", header2: "WATER-ADMIN", field: "clw_admin", type: "currency", width: 10 },
+  { header: "COMM., LIGHT & WATER-SALES", header1: "COMM., LIGHT &", header2: "WATER-SALES", field: "clw_sales", type: "currency", width: 10 },
+  { header: "ITW TOP 10K CORP.", header1: "ITW", header2: "TOP 10K CORP.", field: "itw_top10k", type: "currency", width: 10 },
+  { header: "ITW COMPENSATION", header1: "ITW", header2: "COMPENSATION", field: "itw_compensation", type: "currency", width: 10 },
+  { header: "ITW AT SOURCE", header1: "ITW", header2: "AT SOURCE", field: "itw_at_source", type: "currency", width: 10 },
+  { header: "SSS, PHIC & HDMF PREM. PAYABLE", header1: "SSS, PHIC & HDMF", header2: "PREM. PAYABLE", field: "sss_prem", type: "currency", width: 10 },
+  { header: "SSS/HDMF LOAN PAYABLE", header1: "SSS/HDMF", header2: "LOAN PAYABLE", field: "sss_loan", type: "currency", width: 10 },
+  { header: "OUTSIDE SERVICES Construction", header1: "OUTSIDE SERVICES", header2: "Construction", field: "outside_services", type: "currency", width: 10 },
+  { header: "TRAVEL & TRANSPORTATION ADMIN.", header1: "TRAVEL &", header2: "TRANSPORTATION ADMIN.", field: "travel_admin", type: "currency", width: 10 },
+  { header: "TRAVEL & TRANSPORTATION SALES", header1: "TRAVEL &", header2: "TRANSPORTATION SALES", field: "travel_sales", type: "currency", width: 10 },
+  { header: "TRAVEL & TRANSPORTATION CONSTRUCTION", header1: "TRAVEL &", header2: "TRANSPORTATION CONST.", field: "travel_const", type: "currency", width: 10 },
+  { header: "TRAVEL & TRANSPORTATION WATER", header1: "TRAVEL &", header2: "TRANSPORTATION WATER", field: "travel_water", type: "currency", width: 10 },
+  { header: "SALES COMM 3RD PARTY PAY", header1: "SALES COMM", header2: "3RD PARTY PAY", field: "sales_comm", type: "currency", width: 10 },
+  { header: "Delivery Expenses", header1: "Delivery", header2: "Expenses", field: "delivery_exp", type: "currency", width: 10 },
+  { header: "ADVANCES TO OFFICERS/EMP.", header1: "ADVANCES TO", header2: "OFFICERS/EMP.", field: "advances", type: "currency", width: 10 },
   { header: "SUNDRIES ACCT. TITLE", header1: "S  U  N  D  R  I  E  S", header2: "ACCT. TITLE", field: "sundries_title", type: "text", width: 35 },
-  { header: "AMOUNT DR", header1: "A M O U N T", header2: "DR", field: "sundries_dr", type: "currency", width: 12 },
-  { header: "CR.", header1: "", header2: "CR.", field: "sundries_cr", type: "currency", width: 12 },
+  { header: "AMOUNT DR", header1: "AMOUNT", header2: "DR", field: "sundries_dr", type: "currency", width: 10 },
+  { header: "AMOUNT CR.", header1: "AMOUNT", header2: "CR.", field: "sundries_cr", type: "currency", width: 10 },
 ];
 
 export const CDB_DISTRIBUTION_FIELDS = [
@@ -46,8 +46,36 @@ export const CDB_DISTRIBUTION_FIELDS = [
   "clw_plant", "clw_admin", "clw_sales", "itw_top10k", "itw_compensation",
   "itw_at_source", "sss_prem", "sss_loan", "outside_services",
   "travel_admin", "travel_sales", "travel_const", "travel_water",
-  "sales_comm", "delivery_exp", "advances", "sundries_dr", "sundries_cr"
+  "sales_comm", "delivery_exp", "advances"
 ];
+
+export const CDB_ROUTING_MAP: Record<string, { col: string; match_type?: "startswith" }> = {
+  "Accounts Payable": { col: "accounts_payable" },
+  "Accounts Payable - Others": { col: "accounts_payable" },
+  "Input VAT": { col: "vat_input_tax" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic": { col: "direct_labor" },
+  "Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Overtime": { col: "direct_labor" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic": { col: "overhead_labor" },
+  "Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Overtime": { col: "overhead_labor" },
+  "Cost of Manufacturing:Overhead:OH-Communication, Light & Water": { col: "clw_plant" },
+  "General and Administrative Expenses:G&A-Communication, Light & Water": { col: "clw_admin" },
+  "Selling Expenses:Selling-Communication, Light & Water": { col: "clw_sales" },
+  "Withholding Tax Payable - Expanded - Top Corp.": { col: "itw_top10k" },
+  "Withholding Tax Payable - Compensation": { col: "itw_compensation" },
+  "Withholding Tax Payable - Expanded - at Source": { col: "itw_at_source" },
+  "Withholding Tax Payable - Final": { col: "itw_at_source" },
+  "SSS, PHIC and HDMF Premiums Payable": { col: "sss_prem" },
+  "SSS and HDMF Loans Payable": { col: "sss_loan" },
+  "Cost of Construction:Cons-Outside Services": { col: "outside_services" },
+  "Cost of Manufacturing:Overhead:OH-Outside Service": { col: "outside_services" },
+  "General and Administrative Expenses:G&A-Travel and Transportation": { col: "travel_admin" },
+  "Selling Expenses:Selling-Travel and Transportation": { col: "travel_sales" },
+  "Cost of Construction:Cons-Travel and Transportation": { col: "travel_const" },
+  "Cost of Manufacturing:Overhead:OH-Travel and Transportation": { col: "travel_water" },
+  "Selling Expenses:Selling-Commissions": { col: "sales_comm" },
+  "Selling Expenses:Selling-Delivery Expense": { col: "delivery_exp" },
+  "Advances to Employees": { col: "advances", match_type: "startswith" }
+};
 
 export const FUND_LABEL_MAP: Record<string, string> = {
   "CIB:BDO Admin":                          "BDO-ADMIN",
@@ -63,7 +91,9 @@ export const FUND_LABEL_MAP: Record<string, string> = {
   "COH:Petty Cash Fund - Leonilo Acuña":    "PCF-ACUÑA",
   "COH:Petty Cash Fund - Michael White":    "PCF-WHITE",
   "COH:Petty Cash Fund - Vanessa Anne Duce":"PCF-DUCE",
-  "COH:Revolving Fund - Office":            "REV-OFFICE"
+  "COH:Revolving Fund - Office":            "REV-OFFICE",
+  "COH:Petty Cash Fund":                    "PCF",
+  "COH:Petty Cash Fund - ASTL":             "PCF-ASTL"
 };
 
 export const mapFund = (raw: string) => FUND_LABEL_MAP[raw] || raw;
