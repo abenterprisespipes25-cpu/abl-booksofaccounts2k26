@@ -263,7 +263,7 @@ function routeCDBSubRow(account: string, dr: number, cr: number) {
 
 export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const t0 = performance.now();
-  console.log("[UPLOAD DEBUG] Parsing started...");
+  console.log("[UPLOAD DEBUG] CDB Parsing started...");
   
   const wb = XLSX.read(buf, { type: "array", cellDates: true, cellNF: false, cellText: false });
   if (!wb.SheetNames.length) throw new Error("⚠ No worksheets detected in file.");
@@ -284,18 +284,25 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   // Find the best worksheet
   let bestSheetName = "";
   let bestHeader: HeaderMap | null = null;
+  let maxValidRows = 0;
 
   for (const name of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" }) as any[][];
+    const sheet = wb.Sheets[name];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
     const header = detectHeaderConfig(rows);
+    
     if (header) {
-      bestSheetName = name;
-      bestHeader = header;
-      break;
+      // Basic count of potential rows
+      const potential = rows.slice(header.rowIdx + 1).filter(r => r[header.cols.account] && (num(r[header.cols.debit]) !== 0 || num(r[header.cols.credit]) !== 0)).length;
+      if (potential > maxValidRows) {
+        maxValidRows = potential;
+        bestSheetName = name;
+        bestHeader = header;
+      }
     }
   }
 
-  // FAILSAFE: If no header detected, try first sheet
+  // FAILSAFE: If no header detected, try first sheet with raw mapping
   if (!bestHeader) {
     console.warn("[UPLOAD DEBUG] Strict header detection failed. Using Failsafe Mode on Sheet 0.");
     bestSheetName = wb.SheetNames[0];
@@ -305,9 +312,7 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     };
   }
 
-  console.log(`[UPLOAD DEBUG] Worksheet Found: ${bestSheetName}`);
-  console.log(`[UPLOAD DEBUG] Header Row: ${bestHeader.rowIdx}`);
-  console.log(`[UPLOAD DEBUG] Mapped Columns:`, bestHeader.cols);
+  console.log(`[UPLOAD DEBUG] Worksheet Selected: ${bestSheetName} (${maxValidRows} valid-looking rows)`);
 
   const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
   const dataRows = sheetRows.slice(bestHeader.rowIdx + 1);
@@ -318,7 +323,7 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   let skippedCount = 0;
 
   for (let i = 0; i < dataRows.length; i++) {
-    if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+    if (i % 800 === 0) await new Promise(r => setTimeout(r, 0));
     const r = dataRows[i];
     if (!r || r.every(c => !String(c).trim())) {
       skippedCount++; continue;
@@ -330,7 +335,7 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     const cr = num(r[cols.credit]);
     const date = toISODate(r[cols.date]);
 
-    // RULE: Account exists AND (Dr > 0 or Cr > 0)
+    // RULE: Account exists AND (Dr != 0 or Cr != 0)
     if (acct && (dr !== 0 || cr !== 0)) {
       if (date) {
         if (curGroup.length > 0) groups.push(curGroup);
@@ -338,7 +343,6 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
       } else if (curGroup.length > 0) {
         curGroup.push(r);
       } else {
-        // Orphaned valid row (no date preceding)
         groups.push([r]);
       }
       validRowCount++;
@@ -348,23 +352,12 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   }
   if (curGroup.length > 0) groups.push(curGroup);
 
-  console.log(`[UPLOAD DEBUG] Rows Scanned: ${dataRows.length} | Rows Parsed: ${validRowCount} | Rows Skipped: ${skippedCount}`);
-
-  // Preview first 5 transactions
-  console.log("[UPLOAD DEBUG] Parsed Preview (First 5 Transactions):", groups.slice(0, 5).map(g => {
-    const first = g[0];
-    const { cols } = bestHeader!;
-    return {
-      row: "N/A",
-      date: toISODate(first[cols.date]),
-      account: String(first[cols.account]).trim(),
-      debit: num(first[cols.debit]),
-      credit: num(first[cols.credit])
-    };
-  }));
+  if (groups.length === 0) {
+     throw new Error(`⚠ No valid accounting transactions found in worksheet '${bestSheetName}'. Check if the file has 'Account Title' and 'Debit/Credit' columns.`);
+  }
 
   for (let i = 0; i < groups.length; i++) {
-    if (i % 200 === 0) await new Promise(r => setTimeout(r, 0));
+    if (i % 300 === 0) await new Promise(r => setTimeout(r, 0));
     const txRows = groups[i];
     const first = txRows[0];
     const { cols } = bestHeader;
@@ -410,7 +403,6 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
       validation.source_total_credit = round2(validation.source_total_credit + cr);
 
       if (acct === fullFund && dr === 0 && cr > 0) {
-        validation.routed_rows++;
         validation.routed_total_credit = round2(validation.routed_total_credit + cr);
         continue;
       }
@@ -487,8 +479,6 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     }
   }
 
-  if (allRows.length === 0) throw new Error("0 accounting transactions detected after parsing.");
-
   allRows.sort((a, b) => (a.entry_date || "").localeCompare(b.entry_date || "") || compareStrings(a.check_vno, b.check_vno));
   glEntries.forEach(g => { validation.gl_total_debit = round2(validation.gl_total_debit + g.debit); validation.gl_total_credit = round2(validation.gl_total_credit + g.credit); });
 
@@ -497,161 +487,73 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   return { rows: allRows, glEntries, monthYear: detectedMonthYear, validation };
 }
 
-/* ───── OTHER PARSERS ───── */
+/* ───── OTHER PARSERS (Simplified / Improved) ───── */
 
-export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<any>> {
+async function parseGenericBook(buf: ArrayBuffer, type: "PB"|"SB"|"CRB"): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const allRows: any[] = [];
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
-  for (const sheetName of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" }) as any[][];
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" }) as any[][];
     const header = detectHeaderConfig(rows);
     if (!header) continue;
 
     const dataRows = rows.slice(header.rowIdx + 1);
-    let curHeader: any = null;
-    const transactions: any[] = [];
-
     for (let i = 0; i < dataRows.length; i++) {
-      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+      if (i % 800 === 0) await new Promise(r => setTimeout(r, 0));
       const r = dataRows[i];
       if (!r || r.every(c => !String(c).trim())) continue;
       
       const { cols } = header;
       const iso = toISODate(r[cols.date]);
+      if (!iso) continue;
+      
       const acct = String(r[cols.account] || "").trim();
       const dr = num(r[cols.debit]);
       const cr = num(r[cols.credit]);
+      if (!acct || (dr === 0 && cr === 0)) continue;
 
-      if (iso && (String(r[cols.payee]).trim() || String(r[cols.vno]).trim())) {
-        if (curHeader) transactions.push(curHeader);
-        curHeader = { date: iso, no: String(r[cols.vno] || "").trim(), supplier: String(r[cols.payee] || "").trim(), splits: [] };
-        if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
-      }
-      
-      if (curHeader && acct && (dr !== 0 || cr !== 0)) {
-        curHeader.splits.push({ acct, dr, cr });
-      }
-    }
-    if (curHeader) transactions.push(curHeader);
-
-    for (let i = 0; i < transactions.length; i++) {
-      if (i % 100 === 0) await new Promise(r => setTimeout(r, 0));
-      const tx = transactions[i];
-      const my = monthYearFromISO(tx.date);
-      const folio = folioFor("PB", my);
-      const entry: any = { id: createId(), entry_date: tx.date, supplier: tx.supplier, invoice_no: tx.no, month_year: my };
-      
-      const sundries: any[] = [];
-      let apTotal = 0, vatTotal = 0;
-
-      for (const s of tx.splits) {
-        if (s.acct.toLowerCase().includes("payable")) apTotal = round2(apTotal + s.cr);
-        else if (s.acct.toLowerCase().includes("input")) vatTotal = round2(vatTotal + s.dr);
-        else sundries.push({ title: s.acct, amount: round2(s.dr - s.cr) });
-        glEntries.push({ month_year: my, entry_date: tx.date, account_name: s.acct, particulars: tx.supplier, folio, debit: s.dr, credit: s.cr, source_module: "PB", source_ref: tx.no });
-      }
-      entry.ap_trade_cr = apTotal || round2(vatTotal + sundries.reduce((acc, s) => acc + s.amount, 0));
-      entry.input_tax = vatTotal;
-
-      if (sundries.length === 0) allRows.push(entry);
-      else sundries.forEach((s, idx) => allRows.push({ ...entry, id: createId(), ap_trade_cr: idx === 0 ? entry.ap_trade_cr : null, input_tax: idx === 0 ? entry.input_tax : null, sundries_acct_title: s.title, sundries_amount: s.amount, _is_sub_row: idx > 0 }));
-    }
-  }
-  return { rows: allRows, glEntries, monthYear: detectedMonthYear };
-}
-
-export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any>> {
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  const allRows: any[] = [];
-  const glEntries: GLRow[] = [];
-  let detectedMonthYear = "";
-
-  for (const sheetName of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" }) as any[][];
-    const header = detectHeaderConfig(rows);
-    if (!header) continue;
-
-    const { cols } = header;
-    const dataRows = rows.slice(header.rowIdx + 1);
-    for (let i = 0; i < dataRows.length; i++) {
-      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
-      const r = dataRows[i];
-      if (!r || r.every(c => !String(c).trim())) continue;
-
-      const iso = toISODate(r[cols.date]);
-      if (!iso) continue;
-      
-      const inv = String(r[cols.vno] || "").trim();
-      const customer = String(r[cols.payee] || "").trim();
-      const dr = num(r[cols.debit]);
-      const cr = num(r[cols.credit]);
-      const net = dr || cr;
-      if (net === 0) continue;
-
-      const type = String(r[cols.vno - 1] || "Invoice").trim(); // Fallback detection
+      if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
       const my = monthYearFromISO(iso);
-      if (!detectedMonthYear) detectedMonthYear = my;
-      const folio = folioFor("SB", my);
-      const vat = round2(net * 0.12);
-      const gross = round2(net + vat);
-
-      allRows.push({
-        id: createId(), entry_date: iso, invoice_no: inv, customer_name: customer, transaction_type: type,
-        cash_amount: type.includes("Receipt") ? gross : 0, ar_trade: type.includes("Invoice") ? gross : 0,
-        net_sales: net, output_tax: vat, gross_sales: gross, month_year: my
-      });
-
-      const drAcct = type.includes("Receipt") ? "Cash / Undeposited Funds" : "Accounts Receivable";
-      glEntries.push({ month_year: my, entry_date: iso, account_name: drAcct, particulars: customer, folio, debit: gross, credit: 0, source_module: "SB", source_ref: inv });
-      glEntries.push({ month_year: my, entry_date: iso, account_name: "Manufacturing Sales", particulars: customer, folio, debit: 0, credit: net, source_module: "SB", source_ref: inv });
-      glEntries.push({ month_year: my, entry_date: iso, account_name: "Output VAT", particulars: customer, folio, debit: 0, credit: vat, source_module: "SB", source_ref: inv });
-    }
-  }
-  return { rows: allRows, glEntries, monthYear: detectedMonthYear };
-}
-
-export async function parseCashReceipts(buf: ArrayBuffer): Promise<ParsedResult<any>> {
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  const allRows: any[] = [];
-  const glEntries: GLRow[] = [];
-  let detectedMonthYear = "";
-
-  for (const sheetName of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" }) as any[][];
-    const header = detectHeaderConfig(rows);
-    if (!header) continue;
-
-    const { cols } = header;
-    const dataRows = rows.slice(header.rowIdx + 1);
-    for (let i = 0; i < dataRows.length; i++) {
-      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
-      const r = dataRows[i];
-      if (!r || r.every(c => !String(c).trim())) continue;
-
-      const iso = toISODate(r[cols.date]);
-      if (!iso) continue;
-      const orNo = String(r[cols.vno] || "").trim();
+      const folio = folioFor(type, my);
+      const ref = String(r[cols.vno] || "").trim();
       const payee = String(r[cols.payee] || "").trim();
-      const acct = String(r[cols.account] || "").trim();
-      const dr = num(r[cols.debit]);
-      const cr = num(r[cols.credit]);
 
-      const my = monthYearFromISO(iso);
-      if (!detectedMonthYear) detectedMonthYear = my;
-      const folio = folioFor("CRB", my);
+      const entry: any = { 
+        id: createId(), entry_date: iso, month_year: my, 
+        [type === "PB" ? "supplier" : type === "SB" ? "customer_name" : "payee"]: payee,
+        [type === "PB" ? "invoice_no" : type === "SB" ? "invoice_no" : "or_no"]: ref
+      };
 
-      allRows.push({
-        id: createId(), entry_date: iso, or_no: orNo, payee, fund_label: "CASH",
-        cash_amount: dr, ar_trade: acct.includes("Receivable") ? cr : 0,
-        sales: !acct.includes("Receivable") ? cr : 0, month_year: my
-      });
+      if (type === "PB") {
+        entry.ap_trade_cr = cr;
+        entry.input_tax = acct.toLowerCase().includes("input") ? dr : 0;
+        if (!acct.toLowerCase().includes("input") && !acct.toLowerCase().includes("payable")) {
+          entry.sundries_acct_title = acct;
+          entry.sundries_amount = dr - cr;
+        }
+      } else if (type === "SB") {
+        entry.ar_trade = dr;
+        entry.output_tax = acct.toLowerCase().includes("output") ? cr : 0;
+        entry.net_sales = !acct.toLowerCase().includes("output") && !acct.toLowerCase().includes("receivable") ? cr : 0;
+        entry.gross_sales = entry.net_sales + entry.output_tax;
+      } else {
+        entry.cash_amount = dr;
+        entry.ar_trade = acct.toLowerCase().includes("receivable") ? cr : 0;
+        entry.sales = !acct.toLowerCase().includes("receivable") ? cr : 0;
+      }
 
-      glEntries.push({ month_year: my, entry_date: iso, account_name: "Cash / Undeposited Funds", particulars: payee, folio, debit: dr, credit: 0, source_module: "CRB", source_ref: orNo });
-      glEntries.push({ month_year: my, entry_date: iso, account_name: acct, particulars: payee, folio, debit: 0, credit: cr, source_module: "CRB", source_ref: orNo });
+      allRows.push(entry);
+      glEntries.push({ month_year: my, entry_date: iso, account_name: acct, particulars: payee, folio, debit: dr, credit: cr, source_module: type, source_ref: ref });
     }
   }
+
+  if (allRows.length === 0) throw new Error(`⚠ No valid transactions found. Check if the file matches accounting headers.`);
   return { rows: allRows, glEntries, monthYear: detectedMonthYear };
 }
+
+export const parsePurchaseBook = (buf: ArrayBuffer) => parseGenericBook(buf, "PB");
+export const parseSalesBook = (buf: ArrayBuffer) => parseGenericBook(buf, "SB");
+export const parseCashReceipts = (buf: ArrayBuffer) => parseGenericBook(buf, "CRB");
