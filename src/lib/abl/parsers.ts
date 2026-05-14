@@ -163,7 +163,10 @@ function routeCDBSubRow(account: string, colG: number, colH: number) {
     return { col: "advances", amount: colG || 0 };
   }
   // Everything else -> SUNDRIES
-  return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0/* ───── MAIN CDB PARSER ───── */
+  return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
+}
+
+/* ───── MAIN CDB PARSER ───── */
 
 export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const t0 = performance.now();
@@ -410,12 +413,11 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   console.log(`[UPLOAD] Processing completed in ${((t1 - t0) / 1000).toFixed(2)}s`);
 
   return { rows: allRows, glEntries, monthYear: detectedMonthYear, validation };
-}Rows, glEntries, monthYear: detectedMonthYear, validation };
 }
 
 /* ───── PURCHASE BOOK PARSER ───── */
 
-export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
+export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const allRows: any[] = [];
   const glEntries: GLRow[] = [];
@@ -481,19 +483,22 @@ export function parsePurchaseBook(buf: ArrayBuffer): ParsedResult<any> {
 
 /* ───── SALES BOOK PARSER ───── */
 
-export function parseSalesBook(buf: ArrayBuffer): ParsedResult<any> {
+export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const allRows: any[] = [];
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
   for (const sheetName of wb.SheetNames) {
+    await new Promise(r => setTimeout(r, 0));
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
     if (h < 0) continue;
 
     const dataRows = rows.slice(h + 1);
-    for (const r of dataRows) {
+    for (let i = 0; i < dataRows.length; i++) {
+      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+      const r = dataRows[i];
       const iso = toISODate(r[0]);
       if (!iso) continue;
       const type = String(r[1] || "").trim();
@@ -526,19 +531,22 @@ export function parseSalesBook(buf: ArrayBuffer): ParsedResult<any> {
 
 /* ───── CASH RECEIPTS PARSER ───── */
 
-export function parseCashReceipts(buf: ArrayBuffer): ParsedResult<any> {
+export async function parseCashReceipts(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const allRows: any[] = [];
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
   for (const sheetName of wb.SheetNames) {
+    await new Promise(r => setTimeout(r, 0));
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
     const h = findHeaderRow(rows);
     if (h < 0) continue;
 
     const dataRows = rows.slice(h + 1);
-    for (const r of dataRows) {
+    for (let i = 0; i < dataRows.length; i++) {
+      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+      const r = dataRows[i];
       const iso = toISODate(r[0]);
       if (!iso) continue;
       const orNo = String(r[2] || "").trim();
