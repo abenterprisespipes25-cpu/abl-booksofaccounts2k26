@@ -756,20 +756,20 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
               </div>
 
               <div className="report-section">
-                <div className="report-title">ROWS</div>
+                <div className="report-title">1. ROWS</div>
                 <div className="amount-row"><span>Source rows:</span> <span>{v.source_rows}</span></div>
                 <div className="amount-row"><span>Processed rows:</span> <span>{v.routed_rows}</span></div>
                 <div className="mt-1">{isRowsMatched ? <span className="check-pass">✅ All rows accounted for</span> : <span className="check-fail">⚠️ Row count mismatch! Missing: {v.source_rows - v.routed_rows}</span>}</div>
               </div>
 
               <div className="report-section">
-                <div className="report-title">SOURCE FILE TOTALS (Col G & H)</div>
+                <div className="report-title">2. SOURCE FILE TOTALS (Col G & H)</div>
                 <div className="amount-row"><span>Total Debit (Col G):</span> <span>₱ {fmtMoney(v.source_total_debit)}</span></div>
                 <div className="amount-row"><span>Total Credit (Col H):</span> <span>₱ {fmtMoney(v.source_total_credit)}</span></div>
               </div>
 
               <div className="report-section">
-                <div className="report-title">CDB DISTRIBUTION TOTALS (Cols I-AE)</div>
+                <div className="report-title">3. CDB DISTRIBUTION TOTALS (Cols I-AE)</div>
                 <div className="amount-row"><span>Total Routed Debit:</span> <span>₱ {fmtMoney(v.routed_total_debit)}</span></div>
                 <div className="amount-row"><span>Total Routed Credit:</span> <span>₱ {fmtMoney(v.routed_total_credit)}</span></div>
                 <div className="mt-1">
@@ -779,7 +779,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
               </div>
 
               <div className="report-section">
-                <div className="report-title">GENERAL LEDGER DOUBLE-ENTRY CHECK</div>
+                <div className="report-title">4. GENERAL LEDGER DOUBLE-ENTRY CHECK</div>
                 <div className="amount-row"><span>GL Total Debit:</span> <span>₱ {fmtMoney(totalDr)}</span></div>
                 <div className="amount-row"><span>GL Total Credit:</span> <span>₱ {fmtMoney(totalCr)}</span></div>
                 <div className="mt-1">
@@ -807,13 +807,17 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
               </div>
 
               <div className="report-section">
-                <div className="report-title">COLUMN COVERAGE</div>
+                <div className="report-title">5. COLUMN COVERAGE</div>
                 <div className="grid grid-cols-2 gap-x-8">
                   {Object.entries(v.column_coverage).map(([col, amt]) => (
                     <div key={col} className="amount-row"><span>{col}:</span> <span>₱ {fmtMoney(Number(amt))}</span></div>
                   ))}
                 </div>
-                <div className="mt-2 pt-2 border-t border-white/10 amount-row font-bold text-white">
+              </div>
+
+              <div className="report-section">
+                <div className="report-title">6. CASH AMOUNT COMPUTATION</div>
+                <div className="amount-row font-bold text-white">
                   <span>CASH AMOUNT TOTAL (SUM I-AE):</span> 
                   <span>₱ {fmtMoney(parsed.rows.reduce((s: any, r: any) => s + (Number(r.cash_amount) || 0), 0))}</span>
                 </div>
@@ -821,7 +825,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
 
               {v.unrouted_entries.length > 0 && (
                 <div className="report-section">
-                  <div className="report-title text-orange-400">UNROUTED ENTRIES (→ SUNDRIES)</div>
+                  <div className="report-title text-orange-400">7. UNROUTED ENTRIES (→ SUNDRIES)</div>
                   <div className="max-h-32 overflow-y-auto pr-2">
                     {v.unrouted_entries.map((u: any, i: number) => (
                       <div key={i} className="amount-row text-white/60">
@@ -834,7 +838,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
               )}
 
               <div className="report-section border-none mb-4">
-                <div className="report-title">OVERALL STATUS</div>
+                <div className="report-title">8. OVERALL STATUS</div>
                 {allChecksPassed ? (
                   <div className="check-pass text-sm">✅ ALL CHECKS PASSED — Safe to save</div>
                 ) : (
@@ -842,7 +846,8 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-white/10">
+              <div className="report-title mt-4 pt-4 border-t border-white/10">9. ACTION BUTTONS</div>
+              <div className="flex flex-wrap gap-3 mt-2">
                 <button 
                   onClick={() => {
                     setCdbValidationReport(null);
@@ -879,17 +884,18 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
                   onClick={() => {
                     let content = `CDB UPLOAD VALIDATION REPORT\n================================\n`;
                     content += `File: ${fileName}\nDate Processed: ${new Date().toLocaleString()}\nMonth Tab: ${parsed.monthYear}\n\n`;
-                    content += `ROWS\nSource rows:    ${v.source_rows}\nProcessed rows: ${v.routed_rows}\nStatus: ${isRowsMatched ? 'PASS' : 'FAIL'}\n\n`;
-                    content += `SOURCE TOTALS\nCol G (Debit) Total:  ₱${fmtMoney(v.source_total_debit)}\nCol H (Credit) Total: ₱${fmtMoney(v.source_total_credit)}\n\n`;
-                    content += `CDB DISTRIBUTION TOTALS\nTotal Routed Debit:   ₱${fmtMoney(v.routed_total_debit)}\nTotal Routed Credit:  ₱${fmtMoney(v.routed_total_credit)}\n`;
+                    content += `1. ROWS\nSource rows:    ${v.source_rows}\nProcessed rows: ${v.routed_rows}\nStatus: ${isRowsMatched ? 'PASS' : 'FAIL'}\n\n`;
+                    content += `2. SOURCE TOTALS\nCol G (Debit) Total:  ₱${fmtMoney(v.source_total_debit)}\nCol H (Credit) Total: ₱${fmtMoney(v.source_total_credit)}\n\n`;
+                    content += `3. CDB DISTRIBUTION TOTALS\nTotal Routed Debit:   ₱${fmtMoney(v.routed_total_debit)}\nTotal Routed Credit:  ₱${fmtMoney(v.routed_total_credit)}\n`;
                     content += `Debit Match:   ${isDrBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(Math.abs(v.source_total_debit - v.routed_total_debit))})\n`;
                     content += `Credit Match:  ${isCrBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(Math.abs(v.source_total_credit - v.routed_total_credit))})\n\n`;
-                    content += `GL DOUBLE-ENTRY CHECK\nGL Total Debit:  ₱${fmtMoney(totalDr)}\nGL Total Credit: ₱${fmtMoney(totalCr)}\nBalance: ${isGLBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(diff)})\n\n`;
-                    content += `COLUMN BREAKDOWN\n`;
+                    content += `4. GL DOUBLE-ENTRY CHECK\nGL Total Debit:  ₱${fmtMoney(totalDr)}\nGL Total Credit: ₱${fmtMoney(totalCr)}\nBalance: ${isGLBalanced ? 'PASS' : 'FAIL'} (diff: ₱${fmtMoney(diff)})\n\n`;
+                    content += `5. COLUMN BREAKDOWN\n`;
                     Object.entries(v.column_coverage).forEach(([col, amt]) => { content += `${col} : ₱${fmtMoney(Number(amt))}\n`; });
-                    content += `\nSUNDRIES / UNROUTED ENTRIES\n`;
+                    content += `\n6. CASH AMOUNT TOTAL (SUM I-AE): ₱${fmtMoney(parsed.rows.reduce((s: any, r: any) => s + (Number(r.cash_amount) || 0), 0))}\n`;
+                    content += `\n7. SUNDRIES / UNROUTED ENTRIES\n`;
                     v.unrouted_entries.forEach((u: any) => { content += `${u.account} : ₱${fmtMoney(u.amount)} → SUNDRIES\n`; });
-                    content += `\nOVERALL: ${allChecksPassed ? 'ALL CHECKS PASSED' : 'ISSUES FOUND'}\n`;
+                    content += `\n8. OVERALL STATUS\n${allChecksPassed ? 'ALL CHECKS PASSED' : 'ISSUES FOUND'}\n`;
                     
                     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
                     const url = URL.createObjectURL(blob);
