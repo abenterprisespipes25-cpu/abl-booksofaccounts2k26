@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 
-const PARSERS: Record<ModuleId, (buf: ArrayBuffer) => ParsedResult<any>> = {
+const PARSERS: Record<ModuleId, (buf: ArrayBuffer) => Promise<ParsedResult<any>>> = {
   cdb: parseCDB,
   purchase_book: parsePurchaseBook,
   sales_book: parseSalesBook,
@@ -354,7 +354,7 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
       // Prevent UI freezing by yielding back to the main thread before heavy parsing
       await new Promise(r => setTimeout(r, 50));
       
-      const parsed = PARSERS[moduleId](buf);
+      const parsed = await PARSERS[moduleId](buf);
       const monthsInFile = Array.from(new Set(parsed.rows.map((r: any) => r.month_year))).filter(Boolean) as string[];
       
       if (!monthsInFile.length) throw new Error("No valid transactions found in file.");
