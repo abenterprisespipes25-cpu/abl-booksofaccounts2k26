@@ -298,17 +298,44 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const bestSheetName = wb.SheetNames[0];
   const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
   
-  // Find header row (A=Date, B=Type, C=No, D=Name, E=Memo, F=Account, G=Debit, H=Credit)
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(sheetRows.length, 50); i++) {
-    const r = sheetRows[i];
-    if (r[0] === "Date" && r[5] === "Account" && r[6] === "Debit") {
-      headerIdx = i; break;
+  // Find the best worksheet and header configuration
+  let bestSheetName = "";
+  let bestHeader: any = null;
+  let maxValidRows = 0;
+
+  for (const name of wb.SheetNames) {
+    const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" }) as any[][];
+    const header = detectHeaderConfig(sheetRows);
+    if (header) {
+      const dataRows = sheetRows.slice(header.rowIdx + 1);
+      const potential = dataRows.filter(r => {
+        const acct = String(r[header.cols.account] || "").trim();
+        const dr = num(r[header.cols.debit]);
+        const cr = num(r[header.cols.credit]);
+        return acct && (dr !== 0 || cr !== 0);
+      }).length;
+
+      if (potential > maxValidRows) {
+        maxValidRows = potential;
+        bestSheetName = name;
+        bestHeader = header;
+      }
     }
   }
-  if (headerIdx === -1) headerIdx = 0; // fallback
 
-  const dataRows = sheetRows.slice(headerIdx + 1);
+  // Failsafe: if no header detected but we have sheets, try fallback mapping on Sheet 0
+  if (!bestHeader) {
+    console.warn("[UPLOAD DEBUG] Strict header detection failed. Using Failsafe Mode.");
+    bestSheetName = wb.SheetNames[0];
+    bestHeader = {
+      rowIdx: -1,
+      cols: { date: 0, type: 1, vno: 2, payee: 3, particulars: 4, account: 5, debit: 6, credit: 7 }
+    };
+  }
+
+  const { cols } = bestHeader;
+  const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
+  const dataRows = sheetRows.slice(bestHeader.rowIdx + 1);
   const groups: any[][] = [];
   let curGroup: any[] = [];
   
@@ -316,10 +343,10 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     const r = dataRows[i];
     if (!r || r.every(c => !String(c).trim())) continue;
 
-    const date = toISODate(r[0]);
-    const acct = String(r[5] || "").trim();
-    const dr = num(r[6]);
-    const cr = num(r[7]);
+    const date = toISODate(r[cols.date]);
+    const acct = String(r[cols.account] || "").trim();
+    const dr = num(r[cols.debit]);
+    const cr = num(r[cols.credit]);
 
     if (acct && (dr !== 0 || cr !== 0)) {
       if (date) {
@@ -336,12 +363,12 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
 
   for (const txRows of groups) {
     const main = txRows[0];
-    const isoDate = toISODate(main[0]);
+    const isoDate = toISODate(main[cols.date]) || toISODate(txRows.find(r => toISODate(r[cols.date]))?.[cols.date]);
     if (!isoDate) continue;
 
-    const payee = String(main[3] || "").trim();
-    const particulars = String(main[4] || "").trim();
-    const cvNo = String(main[2] || "").trim();
+    const payee = String(main[cols.payee] || "").trim();
+    const particulars = String(main[cols.particulars] || "").trim();
+    const cvNo = String(main[cols.vno] || "").trim();
     const my = monthYearFromISO(isoDate);
     if (!detectedMonthYear) detectedMonthYear = my;
     const folio = "CDB";
@@ -349,7 +376,7 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     // Detect Fund
     let fullFund = "";
     for (const r of txRows) {
-      const acct = String(r[5] || "").trim();
+      const acct = String(r[cols.account] || "").trim();
       if (acct.startsWith("CIB:") || acct.startsWith("COH:")) {
         fullFund = acct; break;
       }
@@ -377,11 +404,11 @@ export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
     const sundries: any[] = [];
 
     for (const r of txRows) {
-      const acct = String(r[5] || "").trim();
+      const acct = String(r[cols.account] || "").trim();
       if (!acct) continue;
-      const dr = num(r[6]);
-      const cr = num(r[7]);
-      const memo = String(r[4] || "").trim();
+      const dr = num(r[cols.debit]);
+      const cr = num(r[cols.credit]);
+      const memo = String(r[cols.particulars] || "").trim();
 
       validation.source_rows++;
       validation.source_total_debit = round2(validation.source_total_debit + dr);
