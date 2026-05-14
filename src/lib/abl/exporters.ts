@@ -751,17 +751,121 @@ export async function exportPDF(opts: {
       head: fHead, body: fBody, startY: y,
       theme: "grid",
       styles: { fontSize: 8, cellPadding: 3, lineColor: [0, 0, 0], lineWidth: 0.3 },
+      headStyles: { fillColor: [15, 39, 68], textColor: 255, lineWidth: 0.4, lineColor: [0, 0, 0] },
+      columnStyles: { 0: { cellWidth: 250 }, 1: { halign: "right", cellWidth: 100 } },
+      margin: { left: 30 },
+      didParseCell: (data) => {
+        if (data.row.index === fBody.length - 1) {
+          data.cell.styles.fillColor = [209, 250, 229];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+  }
 
+  doc.save(filename);
+}
+
+/** Professional CDB Recap Export using ExcelJS — v2.6 */
+export async function exportRecapCDBExcel(opts: {
+  companyName: string;
+  monthYear: string;
+  recapSundries: { account: string; dr: number; cr: number }[];
+  recapFunds: { fund: string; amount: number }[];
+}) {
+  const { companyName, monthYear, recapSundries, recapFunds } = opts;
+  const workbook   = new ExcelJS.Workbook();
+  const fontBold10 = { name: "Arial", size: 10, bold: true };
+  const fontBold9  = { name: "Arial", size: 9,  bold: true };
+  const fontReg9   = { name: "Arial", size: 9 };
+  const medSide    = { style: "medium" as any, color: { argb: "000000" } };
+  const thinSide   = { style: "thin"   as any, color: { argb: "000000" } };
+  const borderThin   = { top: thinSide, bottom: thinSide, left: thinSide, right: thinSide };
+  const borderMedTop = { top: medSide,  bottom: medSide,  left: thinSide, right: thinSide };
+  const numFmt  = "#,##0.00";
+  const hdrFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "DDEEFF" } };
+  const totFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "E2F0DA" } };
+
+  const MONTHS  = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
+                   "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+  const parts   = monthYear.trim().toUpperCase().split(/\s+/);
+  const mIdx    = MONTHS.indexOf(parts[0]);
+  const yr      = parseInt(parts[1] || "0", 10);
+  const lastDay = (mIdx >= 0 && yr) ? new Date(yr, mIdx + 1, 0).getDate() : 31;
+  const period  = (mIdx >= 0 && yr) ? `${MONTHS[mIdx]} 01 - ${lastDay}, ${yr}` : monthYear.toUpperCase();
+  const fmt$    = (n: number) => n.toLocaleString("en-PH", { minimumFractionDigits: 2 });
+
+  // ── Sheet 1: Sundries Recap ──────────────────────────────
+  const ws1 = workbook.addWorksheet("Sundries-Recap", {
+    pageSetup: { paperSize: 5, orientation: "portrait",
+      margins: { left: 1.0, right: 1.0, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 } }
+  });
+  ws1.getColumn(1).width = 66.66;
+  ws1.getColumn(2).width = 12.33;
+  ws1.getColumn(3).width = 11.89;
+
+  ws1.addRow([companyName]).getCell(1).font = fontBold10;
+  ws1.addRow(["RECAPITULATION OF SUNDRY ACCOUNTS — Cash Disbursements Book"]).getCell(1).font = fontBold9;
+  ws1.addRow([`FOR THE PERIOD OF ${period}`]).getCell(1).font = fontReg9;
+  ws1.addRow([]);
+  const hr1 = ws1.addRow(["S  U  N  D  R  I  E  S", "Debit", "Credit"]);
+  hr1.eachCell(c => { c.font = fontBold10; c.border = borderThin; c.alignment = { horizontal: "center" }; (c.fill as any) = hdrFill; });
+
+  let totalDr = 0, totalCr = 0;
+  recapSundries.forEach(s => {
+    totalDr += s.dr; totalCr += s.cr;
+    const r = ws1.addRow([s.account, s.dr || null, s.cr || null]);
+    r.getCell(1).font = fontReg9; r.getCell(1).border = borderThin;
+    r.getCell(2).numFmt = numFmt; r.getCell(2).border = borderThin;
+    r.getCell(3).numFmt = numFmt; r.getCell(3).border = borderThin;
+  });
+  const tr1 = ws1.addRow(["GRAND TOTAL", totalDr || null, totalCr || null]);
+  tr1.eachCell((c, i) => { c.font = fontBold10; c.border = borderMedTop; (c.fill as any) = totFill; if (i > 1) c.numFmt = numFmt; if (i === 1) c.alignment = { horizontal: "right" }; });
+  ws1.addRow([]);
+  ws1.addRow(["CROSS-CHECK VERIFICATION"]).getCell(1).font = { ...fontBold9, color: { argb: "004499" } };
+  ws1.addRow([`CHECK A — Recap Sundries DR Total: ₱${fmt$(totalDr)}`]).getCell(1).font = fontReg9;
+  ws1.addRow([`CHECK B — Recap Sundries CR Total: ₱${fmt$(totalCr)}`]).getCell(1).font = fontReg9;
+
+  // ── Sheet 2: Bank Recap ──────────────────────────────────
+  const ws2 = workbook.addWorksheet("Bank-Recap", {
+    pageSetup: { paperSize: 5, orientation: "portrait",
+      margins: { left: 1.0, right: 1.0, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 } }
+  });
+  ws2.getColumn(1).width = 24;
+  ws2.getColumn(2).width = 16;
+
+  ws2.addRow([companyName]).getCell(1).font = fontBold10;
+  ws2.addRow(["RECAPITULATION OF BANK ACCOUNTS — Cash Disbursements Book"]).getCell(1).font = fontBold9;
+  ws2.addRow([`FOR THE PERIOD OF ${period}`]).getCell(1).font = fontReg9;
+  ws2.addRow([]);
+  const hr2 = ws2.addRow(["FUND", "AMOUNT"]);
+  hr2.eachCell(c => { c.font = fontBold10; c.border = borderThin; c.alignment = { horizontal: "center" }; (c.fill as any) = hdrFill; });
+
+  let totalBank = 0;
+  recapFunds.forEach(f => {
+    totalBank += f.amount;
+    const r = ws2.addRow([f.fund, f.amount || null]);
+    r.getCell(1).font = fontReg9; r.getCell(1).border = borderThin;
+    r.getCell(2).numFmt = numFmt; r.getCell(2).border = borderThin;
+  });
+  const tr2 = ws2.addRow(["TOTAL", totalBank || null]);
+  tr2.eachCell((c, i) => { c.font = fontBold10; c.border = borderMedTop; (c.fill as any) = totFill; if (i === 2) c.numFmt = numFmt; if (i === 1) c.alignment = { horizontal: "right" }; });
+  ws2.addRow([]);
+  ws2.addRow(["CROSS-CHECK VERIFICATION"]).getCell(1).font = { ...fontBold9, color: { argb: "004499" } };
+  ws2.addRow([`CHECK C — Bank Total: ₱${fmt$(totalBank)}`]).getCell(1).font = fontReg9;
+
+  // ── Download ─────────────────────────────────────────────
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  const safeCompany = companyName.replace(/[^a-z0-9]/gi, '_').toUpperCase();
-  const safeMonth = monthYear.replace(/[^a-z0-9]/gi, '_').toUpperCase();
+  const safeCompany = companyName.replace(/[^a-z0-9]/gi, "_").toUpperCase();
+  const safeMonth   = monthYear.replace(/[^a-z0-9]/gi, "_").toUpperCase();
   a.download = `CDB_RECAP_${safeCompany}_${safeMonth}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
