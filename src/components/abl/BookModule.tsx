@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, FileSpreadsheet, FileText, Printer, Save, Loader2, CheckCircle2, X } from "lucide-react";
 import { toast } from "sonner";
 import { CDBPrintPreview } from "./CDBPrintPreview";
+import { CDBRecapModal } from "./CDBRecapModal";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -225,9 +226,10 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
     const map = new Map<string, number>();
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (r.fund && !r._is_sub_row) {
-        const key = r.fund;
-        map.set(key, round2((map.get(key) || 0) + (Number(r.cash_amount) || 0)));
+      // Use fund_label (human label like BDO-ADMIN) not raw CIB:/COH: string
+      const label = r.fund_label || r.fund;
+      if (label && label !== "UNKNOWN" && !r._is_sub_row) {
+        map.set(label, round2((map.get(label) || 0) + (Number(r.cash_amount) || 0)));
       }
     }
     return Array.from(map.entries()).map(([fund, amount]) => ({ fund, amount })).sort((a, b) => a.fund.localeCompare(b.fund));
@@ -1281,7 +1283,16 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         </div>
       )}
 
-      {isRecapOpen && moduleId === "cdb" && (
+      {moduleId === "cdb" && (
+        <CDBRecapModal
+          isOpen={isRecapOpen}
+          onClose={() => setIsRecapOpen(false)}
+          monthTab={active || ""}
+          companyName={companySettings?.company_name || "JHAYMARTS INDUSTRIES, INC."}
+        />
+      )}
+
+      {false && isRecapOpen && moduleId === "cdb" && (
         <div className="fixed inset-0 z-50 bg-[#0a1628]/95 overflow-y-auto backdrop-blur-md p-4 animate-in fade-in duration-300">
           <div className="recap-container">
             <div className="flex justify-between items-center mb-4 no-print">
