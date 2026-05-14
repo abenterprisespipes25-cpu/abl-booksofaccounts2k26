@@ -463,7 +463,11 @@ export default function BookModule({ moduleId }: { moduleId: ModuleId }) {
         } as any);
       }
 
-      toast.success(`✅ ${meta.label} updated successfully! ${parsed.rows.length} new entries added for ${targetMonth}`, { id: loaderId });
+      if (moduleId === "cdb" && parsed.validation) {
+        toast.success(`✅ ${parsed.rows.length} entries saved for ${targetMonth}\nGL: ₱${fmtMoney(parsed.validation.gl_total_debit)} DR = ₱${fmtMoney(parsed.validation.gl_total_credit)} CR ✅ Balanced`, { id: loaderId, duration: 5000 });
+      } else {
+        toast.success(`✅ ${meta.label} updated successfully! ${parsed.rows.length} new entries added for ${targetMonth}`, { id: loaderId });
+      }
       
       // Invalidate cache for all uploaded months so fresh data is loaded next visit
       monthsInFile.forEach(my => invalidateCache(moduleId, my));
