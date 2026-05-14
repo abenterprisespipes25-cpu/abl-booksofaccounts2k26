@@ -1,4 +1,4 @@
-// ABL v2.2 — Finalized Audit-Ready Parsers
+// ABL v2.5 — Finalized Accounting-Tolerant Parsers
 import * as XLSX from "xlsx";
 import { FUND_LABEL_MAP, CDB_DISTRIBUTION_FIELDS } from "./config";
 import { dateToMonthYear, round2, folioFor, createId, compareStrings } from "./format";
@@ -25,36 +25,59 @@ export interface ParsedResult<T> {
 
 /* ───── HELPER UTILS ───── */
 
+/**
+ * Robust numeric parsing: handles currency symbols, commas, and parentheses for negative numbers.
+ */
 function num(v: any): number {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "number") return v;
-  // Handle formulas or complex objects from XLSX if any (though sheet_to_json usually evaluates)
+  
+  // Handle XLSX objects with results
   if (typeof v === "object" && v !== null && 'result' in v) v = v.result;
   
-  // Strip out currency symbols, commas, and spaces, retaining only digits, dots, and minus signs
-  const str = String(v).replace(/[^\d.-]/g, "");
-  const n = parseFloat(str);
-  return isNaN(n) ? 0 : n;
+  let str = String(v).trim();
+  if (!str) return 0;
+
+  // Handle (1,234.55) as negative
+  const isParenthesesNegative = str.startsWith('(') && str.endsWith(')');
+  if (isParenthesesNegative) {
+    str = str.slice(1, -1);
+  }
+
+  // Strip everything except digits, dots, and minus sign
+  str = str.replace(/[^\d.-]/g, "");
+  let n = parseFloat(str);
+  if (isNaN(n)) return 0;
+  
+  return isParenthesesNegative ? -Math.abs(n) : n;
 }
 
+/**
+ * Robust ISO date conversion.
+ */
 function toISODate(v: any): string | null {
   if (!v) return null;
   if (v instanceof Date && !isNaN(v.getTime())) {
     return v.toISOString().split("T")[0];
   }
   if (typeof v === "number") {
-    // Excel date serial conversion (using Math.round to fix precision issues)
-    const date = new Date(Math.round((v - 25569) * 86400000));
-    return date.toISOString().split("T")[0];
+    // Excel date serial
+    try {
+      const date = new Date(Math.round((v - 25569) * 86400000));
+      if (!isNaN(date.getTime())) return date.toISOString().split("T")[0];
+    } catch { return null; }
   }
   const s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
   
-  // Attempt to parse standard text dates like "1/15/2026" or "Jan 15, 2026"
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().split("T")[0];
-  }
+  // Attempt to parse text dates
+  try {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split("T")[0];
+    }
+  } catch { return null; }
+  
   return null;
 }
 
@@ -64,26 +87,62 @@ function monthYearFromISO(iso: string | null): string {
   return isNaN(d.getTime()) ? "" : dateToMonthYear(d);
 }
 
-function findHeaderRow(rows: any[][]): number {
-  for (let i = 0; i < Math.min(rows.length, 30); i++) {
-    const first = String(rows[i]?.[0] ?? "").trim().toLowerCase();
-    if (first.startsWith("date")) return i;
-  }
-  return -1;
+const HEADER_VARIANTS = {
+  date: ["DATE", "TRANSACTION DATE", "DATE RECEIVED", "DOC DATE"],
+  payee: ["PAYEE", "NAME", "SUPPLIER", "VENDOR", "PAYOR", "CLIENT"],
+  particulars: ["PARTICULARS", "DESCRIPTION", "MEMO", "REMARKS"],
+  vno: ["VOUCHER", "VNO", "VOUCHER NO", "REF NO", "REFERENCE", "VOUCHER #"],
+  cno: ["CHECK", "CNO", "CHECK NO", "CHECK #", "CHQ NO"],
+  account: ["ACCOUNT", "ACCOUNT TITLE", "ACCT TITLE", "CHART OF ACCOUNTS", "TITLE", "ACCOUNT NAME"],
+  debit: ["DEBIT", "DR", "AMOUNT DR", "DEBIT AMOUNT", "DR AMOUNT", "DEBITS"],
+  credit: ["CREDIT", "CR", "AMOUNT CR", "CREDIT AMOUNT", "CR AMOUNT", "CREDITS"]
+};
+
+interface HeaderMap {
+  rowIdx: number;
+  cols: {
+    date: number;
+    payee: number;
+    particulars: number;
+    vno: number;
+    cno: number;
+    account: number;
+    debit: number;
+    credit: number;
+  };
 }
 
-function naturalSort(a: string, b: string): number {
-  const segmentize = (s: string) =>
-    String(s ?? "").replace(/[^\w]/g, " ").trim().split(/(\d+)/).filter(Boolean).map((seg) => (/^\d+$/.test(seg) ? parseInt(seg, 10) : seg.toLowerCase()));
-  const sa = segmentize(a), sb = segmentize(b);
-  const len = Math.max(sa.length, sb.length);
-  for (let i = 0; i < len; i++) {
-    const x = sa[i] ?? "", y = sb[i] ?? "";
-    if (x === y) continue;
-    if (typeof x === "number" && typeof y === "number") return x - y;
-    return x < y ? -1 : 1;
+/**
+ * Dynamically detects the header row and column mapping.
+ */
+function detectHeaderConfig(rows: any[][]): HeaderMap | null {
+  for (let i = 0; i < Math.min(rows.length, 50); i++) {
+    const r = rows[i];
+    if (!r) continue;
+
+    const mapping = { date: -1, payee: -1, particulars: -1, vno: -1, cno: -1, account: -1, debit: -1, credit: -1 };
+    let matches = 0;
+
+    r.forEach((cell, colIdx) => {
+      const val = String(cell || "").trim().toUpperCase();
+      if (!val) return;
+
+      for (const [key, variants] of Object.entries(HEADER_VARIANTS)) {
+        if (variants.some(v => val === v || val.includes(v))) {
+          if ((mapping as any)[key] === -1) {
+            (mapping as any)[key] = colIdx;
+            matches++;
+          }
+        }
+      }
+    });
+
+    // Essential matches for accounting
+    if (mapping.account !== -1 && (mapping.debit !== -1 || mapping.credit !== -1)) {
+      return { rowIdx: i, cols: mapping as any };
+    }
   }
-  return 0;
+  return null;
 }
 
 /* ───── ACCOUNTING LOGIC ───── */
@@ -133,289 +192,268 @@ const CDB_ROUTING_MAP: Record<string, { col: string }> = {
   "Selling Expenses:Selling-Delivery Expense": { col: "delivery_exp" },
 };
 
-function routeCDBSubRow(account: string, colG: number, colH: number) {
-  // CIB/COH always -> SUNDRIES
+function routeCDBSubRow(account: string, dr: number, cr: number) {
   if (account?.startsWith("CIB:") || account?.startsWith("COH:")) {
-    return { col: "SUNDRIES", acct_title: account, dr: colH || 0, cr: 0 };
+    return { col: "SUNDRIES", acct_title: account, dr: cr || 0, cr: 0 };
   }
-  // Withholding tax -> stored as NEGATIVE in ITW col
   const wtxAccounts = [
-    "Withholding Tax Payable - Expanded - Top Corp.",
-    "Withholding Tax Payable - Expanded - Top 10,000 Corp.",
-    "ITW TOP 10K CORP.",
-    "Withholding Tax Payable - Compensation",
-    "COMPENSATION",
-    "Withholding Tax Payable - Expanded - at Source",
-    "Withholding Tax Payable - Expanded - At Source",
-    "AT SOURCE",
-    "Withholding Tax Payable - Final"
+    "Withholding Tax Payable - Expanded - Top Corp.", "Withholding Tax Payable - Expanded - Top 10,000 Corp.",
+    "ITW TOP 10K CORP.", "Withholding Tax Payable - Compensation", "COMPENSATION",
+    "Withholding Tax Payable - Expanded - at Source", "Withholding Tax Payable - Expanded - At Source",
+    "AT SOURCE", "Withholding Tax Payable - Final"
   ];
   if (wtxAccounts.includes(account)) {
     const route = CDB_ROUTING_MAP[account];
-    return { col: route?.col || "SUNDRIES", amount: -(colH || 0) };
+    return { col: route?.col || "SUNDRIES", amount: -(cr || 0) };
   }
-  // Exact match in routing map
   if (CDB_ROUTING_MAP[account]) {
-    return { col: CDB_ROUTING_MAP[account].col, amount: colG || 0 };
+    return { col: CDB_ROUTING_MAP[account].col, amount: dr || 0 };
   }
-  // Startswith match (Advances to Employees)
   if (account?.startsWith("Advances to Employees")) {
-    return { col: "advances", amount: colG || 0 };
+    return { col: "advances", amount: dr || 0 };
   }
-  // Everything else -> SUNDRIES
-  return { col: "SUNDRIES", acct_title: account, dr: colG || 0, cr: colH || 0 };
+  return { col: "SUNDRIES", acct_title: account, dr: dr || 0, cr: cr || 0 };
 }
 
 /* ───── MAIN CDB PARSER ───── */
 
 export async function parseCDB(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const t0 = performance.now();
-  console.log("[UPLOAD] Parsing started...");
+  console.log("[UPLOAD DEBUG] Parsing started...");
   
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  if (!wb.SheetNames.length) throw new Error("⚠️ No worksheets detected in Excel file.");
+  const wb = XLSX.read(buf, { type: "array", cellDates: true, cellNF: false, cellText: false });
+  if (!wb.SheetNames.length) throw new Error("⚠ No worksheets detected in file.");
 
   const allRows: any[] = [];
   const glEntries: GLRow[] = [];
   let detectedMonthYear = "";
 
   const validation = {
-    source_total_debit: 0,
-    source_total_credit: 0,
-    routed_total_debit: 0,
-    routed_total_credit: 0,
-    source_rows: 0,
-    routed_rows: 0,
+    source_total_debit: 0, source_total_credit: 0,
+    routed_total_debit: 0, routed_total_credit: 0,
+    source_rows: 0, routed_rows: 0,
     column_coverage: {} as Record<string, number>,
     unrouted_entries: [] as any[],
-    gl_total_debit: 0,
-    gl_total_credit: 0
+    gl_total_debit: 0, gl_total_credit: 0
   };
 
-  for (const sheetName of wb.SheetNames) {
-    console.log(`[UPLOAD] Worksheet detected: ${sheetName}`);
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
-    const h = findHeaderRow(rows);
-    
-    // Fallback: if findHeaderRow fails, start from row 0
-    const dataRows = h < 0 ? rows : rows.slice(h + 1);
-    const groups: any[][] = [];
-    let curGroup: any[] = [];
+  // Find the best worksheet
+  let bestSheetName = "";
+  let bestHeader: HeaderMap | null = null;
 
-    let validRowCount = 0;
-    let skippedCount = 0;
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "" }) as any[][];
+    const header = detectHeaderConfig(rows);
+    if (header) {
+      bestSheetName = name;
+      bestHeader = header;
+      break;
+    }
+  }
 
-    // Step 2: Group sub-rows by transaction
-    for (let i = 0; i < dataRows.length; i++) {
-      // Yield to main thread every 500 rows
-      if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
-      
-      const r = dataRows[i];
-      if (!r || r.every(c => String(c).trim() === "")) {
-        skippedCount++;
-        continue;
-      }
-      
-      const iso = toISODate(r[0]);
-      const payee = String(r[1] || "").trim();
-      const particulars = String(r[2] || "").trim();
-      const vno = String(r[3] || "").trim();
-      const cno = String(r[4] || "").trim();
-      const acct = String(r[5] || "").trim();
-      const dr = num(r[6]);
-      const cr = num(r[7]);
+  // FAILSAFE: If no header detected, try first sheet
+  if (!bestHeader) {
+    console.warn("[UPLOAD DEBUG] Strict header detection failed. Using Failsafe Mode on Sheet 0.");
+    bestSheetName = wb.SheetNames[0];
+    bestHeader = {
+      rowIdx: -1,
+      cols: { date: 0, payee: 1, particulars: 2, vno: 3, cno: 4, account: 5, debit: 6, credit: 7 }
+    };
+  }
 
-      // A row is a start of a transaction if it has a date AND some details
-      if (iso && (payee || vno || cno || dr > 0 || cr > 0)) {
+  console.log(`[UPLOAD DEBUG] Worksheet Found: ${bestSheetName}`);
+  console.log(`[UPLOAD DEBUG] Header Row: ${bestHeader.rowIdx}`);
+  console.log(`[UPLOAD DEBUG] Mapped Columns:`, bestHeader.cols);
+
+  const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[bestSheetName], { header: 1, defval: "" }) as any[][];
+  const dataRows = sheetRows.slice(bestHeader.rowIdx + 1);
+  const groups: any[][] = [];
+  let curGroup: any[] = [];
+  
+  let validRowCount = 0;
+  let skippedCount = 0;
+
+  for (let i = 0; i < dataRows.length; i++) {
+    if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
+    const r = dataRows[i];
+    if (!r || r.every(c => !String(c).trim())) {
+      skippedCount++; continue;
+    }
+
+    const { cols } = bestHeader;
+    const acct = String(r[cols.account] || "").trim();
+    const dr = num(r[cols.debit]);
+    const cr = num(r[cols.credit]);
+    const date = toISODate(r[cols.date]);
+
+    // RULE: Account exists AND (Dr > 0 or Cr > 0)
+    if (acct && (dr !== 0 || cr !== 0)) {
+      if (date) {
         if (curGroup.length > 0) groups.push(curGroup);
         curGroup = [r];
-        validRowCount++;
-      } 
-      // A sub-row must have an account and amounts
-      else if (acct && (dr > 0 || cr > 0)) {
-        if (curGroup.length > 0) curGroup.push(r);
-        validRowCount++;
+      } else if (curGroup.length > 0) {
+        curGroup.push(r);
       } else {
-        skippedCount++;
+        // Orphaned valid row (no date preceding)
+        groups.push([r]);
+      }
+      validRowCount++;
+    } else {
+      skippedCount++;
+    }
+  }
+  if (curGroup.length > 0) groups.push(curGroup);
+
+  console.log(`[UPLOAD DEBUG] Rows Scanned: ${dataRows.length} | Rows Parsed: ${validRowCount} | Rows Skipped: ${skippedCount}`);
+
+  // Preview first 5 transactions
+  console.log("[UPLOAD DEBUG] Parsed Preview (First 5 Transactions):", groups.slice(0, 5).map(g => {
+    const first = g[0];
+    const { cols } = bestHeader!;
+    return {
+      row: "N/A",
+      date: toISODate(first[cols.date]),
+      account: String(first[cols.account]).trim(),
+      debit: num(first[cols.debit]),
+      credit: num(first[cols.credit])
+    };
+  }));
+
+  for (let i = 0; i < groups.length; i++) {
+    if (i % 200 === 0) await new Promise(r => setTimeout(r, 0));
+    const txRows = groups[i];
+    const first = txRows[0];
+    const { cols } = bestHeader;
+    const iso = toISODate(first[cols.date]) || toISODate(txRows.find(r => toISODate(r[cols.date]))?.[cols.date]);
+    if (!iso) continue;
+
+    const payee = String(first[cols.payee] || "").trim();
+    const particulars = String(first[cols.particulars] || "").trim();
+    const vno = String(first[cols.vno] || "").trim();
+    const cno = String(first[cols.cno] || "").trim();
+    const my = monthYearFromISO(iso);
+    if (!detectedMonthYear) detectedMonthYear = my;
+    const folio = folioFor("CDB", my);
+
+    let fullFund = "";
+    for (const r of txRows) {
+      const acct = String(r[cols.account] || "").trim();
+      if (acct.startsWith("CIB:") || acct.startsWith("COH:")) {
+        fullFund = acct; break;
       }
     }
-    if (curGroup.length > 0) groups.push(curGroup);
-    
-    console.log(`[UPLOAD] Worksheet processed: ${sheetName} | Total rows scanned: ${dataRows.length} | Valid rows: ${validRowCount} | Skipped: ${skippedCount}`);
+    const fundLabel = FUND_LABEL_MAP[fullFund] || "UNKNOWN";
 
-    for (let i = 0; i < groups.length; i++) {
-      if (i % 100 === 0) await new Promise(r => setTimeout(r, 0));
-      const txRows = groups[i];
-      const first = txRows[0];
-      const iso = toISODate(first[0]);
-      const payee = String(first[1] || "").trim();
-      const particulars = String(first[2] || "").trim();
-      const vno = String(first[3] || "").trim();
-      const cno = String(first[4] || "").trim();
-      
-      const my = monthYearFromISO(iso);
-      if (!detectedMonthYear) detectedMonthYear = my;
-      const folio = folioFor("CDB", my);
+    const entry: any = {
+      id: createId(), entry_date: iso, payee, particulars,
+      petty_cash_vno: vno && vno.toUpperCase().includes("PCF") ? vno : "",
+      check_vno: vno, check_no: cno || vno,
+      fund: fullFund, fund_label: fundLabel, month_tab: my,
+      source_module: "Cash Disbursements Book",
+    };
+    CDB_DISTRIBUTION_FIELDS.forEach(f => entry[f] = 0);
+    entry.sundries_title = "";
+    const sundries: any[] = [];
 
-      // Step 3: detectFund()
-      let fullFund = "";
-      for (const r of txRows) {
-        const acct = String(r[5] || "").trim();
-        if (acct.startsWith("CIB:") || acct.startsWith("COH:")) {
-          fullFund = acct;
-          break;
-        }
-      }
-      const fundLabel = FUND_LABEL_MAP[fullFund] || "UNKNOWN";
+    for (const r of txRows) {
+      const acct = String(r[cols.account] || "").trim();
+      if (!acct) continue;
+      const dr = num(r[cols.debit]);
+      const cr = num(r[cols.credit]);
 
-      const entry: any = {
-        id: createId(),
-        entry_date: iso,
-        payee,
-        particulars: particulars,
-        petty_cash_vno: vno && vno.toUpperCase().includes("PCF") ? vno : "",
-        check_vno: vno,
-        check_no: cno || vno,
-        fund: fullFund,
-        fund_label: fundLabel,
-        month_tab: my,
-        source_module: "Cash Disbursements Book",
-      };
-      CDB_DISTRIBUTION_FIELDS.forEach(f => entry[f] = 0);
-      entry.sundries_title = "";
+      validation.source_rows++;
+      validation.source_total_debit = round2(validation.source_total_debit + dr);
+      validation.source_total_credit = round2(validation.source_total_credit + cr);
 
-      const sundries: any[] = [];
-
-      // Step 4: For each sub-row -> routeSubRow()
-      for (const r of txRows) {
-        const acct = String(r[5] || "").trim();
-        if (!acct) continue;
-        const dr = num(r[6]);
-        const cr = num(r[7]);
-
-        validation.source_rows++;
-        validation.source_total_debit = round2(validation.source_total_debit + dr);
-        validation.source_total_credit = round2(validation.source_total_credit + cr);
-
-        // ALWAYS skip the main fund credit from distribution entirely so it doesn't double count in SUNDRIES
-        if (acct === fullFund && dr === 0 && cr > 0) {
-          validation.routed_rows++;
-          validation.routed_total_credit = round2(validation.routed_total_credit + cr);
-          continue; 
-        }
-
-        const route = routeCDBSubRow(acct, dr, cr);
+      if (acct === fullFund && dr === 0 && cr > 0) {
         validation.routed_rows++;
-        
-        if (route.col === "SUNDRIES") {
-          sundries.push({ 
-            title: route.acct_title, 
-            dr: route.dr, 
-            cr: route.cr, 
-            particulars: String(r[2] || "").trim() 
-          });
-          validation.unrouted_entries.push({ account: acct, amount: Math.abs(route.dr - route.cr) });
-          validation.routed_total_debit = round2(validation.routed_total_debit + route.dr);
-          validation.routed_total_credit = round2(validation.routed_total_credit + Math.abs(route.cr));
-          validation.column_coverage["AD - Sundries DR"] = round2((validation.column_coverage["AD - Sundries DR"] || 0) + route.dr);
-          validation.column_coverage["AE - Sundries CR"] = round2((validation.column_coverage["AE - Sundries CR"] || 0) + Math.abs(route.cr));
-        } else {
-          entry[route.col] = round2((entry[route.col] || 0) + (route.amount || 0));
-          if (["itw_top10k", "itw_compensation", "itw_at_source"].includes(route.col)) {
-            const crAmount = Math.abs(route.amount);
-            validation.routed_total_credit = round2(validation.routed_total_credit + crAmount);
-          } else {
-            validation.routed_total_debit = round2(validation.routed_total_debit + route.amount);
-          }
-          validation.column_coverage[route.col] = round2((validation.column_coverage[route.col] || 0) + Math.abs(route.amount));
-        }
+        validation.routed_total_credit = round2(validation.routed_total_credit + cr);
+        continue;
       }
 
-      const txGeneratedRows: any[] = [];
-      if (sundries.length === 0) {
-        entry.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((s, f) => s + (num(entry[f]) || 0), 0));
-        allRows.push(entry);
-        txGeneratedRows.push(entry);
+      const route = routeCDBSubRow(acct, dr, cr);
+      validation.routed_rows++;
+
+      if (route.col === "SUNDRIES") {
+        sundries.push({ title: route.acct_title, dr: route.dr, cr: route.cr, particulars: String(r[cols.particulars] || "").trim() });
+        validation.unrouted_entries.push({ account: acct, amount: Math.abs(route.dr - route.cr) });
+        validation.routed_total_debit = round2(validation.routed_total_debit + route.dr);
+        validation.routed_total_credit = round2(validation.routed_total_credit + Math.abs(route.cr));
+        validation.column_coverage["AD - Sundries DR"] = round2((validation.column_coverage["AD - Sundries DR"] || 0) + route.dr);
+        validation.column_coverage["AE - Sundries CR"] = round2((validation.column_coverage["AE - Sundries CR"] || 0) + Math.abs(route.cr));
       } else {
-        sundries.forEach((s, idx) => {
-          const row = {
-            ...entry,
-            id: createId(),
-            particulars: s.particulars || entry.particulars,
-            sundries_title: s.title,
-            sundries_dr: s.dr,
-            sundries_cr: s.cr,
-            _is_sub_row: idx > 0
-          };
-          if (idx > 0) {
-             CDB_DISTRIBUTION_FIELDS.forEach(f => (row as any)[f] = 0);
-          }
-          row.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((sum, f) => sum + (num(row[f]) || 0), 0));
-          allRows.push(row);
-          txGeneratedRows.push(row);
-        });
+        entry[route.col] = round2((entry[route.col] || 0) + (route.amount || 0));
+        if (["itw_top10k", "itw_compensation", "itw_at_source"].includes(route.col)) {
+          validation.routed_total_credit = round2(validation.routed_total_credit + Math.abs(route.amount));
+        } else {
+          validation.routed_total_debit = round2(validation.routed_total_debit + route.amount);
+        }
+        validation.column_coverage[route.col] = round2((validation.column_coverage[route.col] || 0) + Math.abs(route.amount));
       }
+    }
 
-      const pushGL = (account_name: string, account_type: string, debit: number, credit: number, particulars: string) => {
-        if (debit === 0 && credit === 0) return;
-        glEntries.push({ month_year: my, entry_date: (iso || ""), account_name, particulars, folio, debit, credit, source_module: "CDB", source_ref: cno || vno });
-      };
+    const txGeneratedRows: any[] = [];
+    if (sundries.length === 0) {
+      entry.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((s, f) => s + (num(entry[f]) || 0), 0));
+      allRows.push(entry); txGeneratedRows.push(entry);
+    } else {
+      sundries.forEach((s, idx) => {
+        const row = { ...entry, id: createId(), particulars: s.particulars || entry.particulars, sundries_title: s.title, sundries_dr: s.dr, sundries_cr: s.cr, _is_sub_row: idx > 0 };
+        if (idx > 0) CDB_DISTRIBUTION_FIELDS.forEach(f => (row as any)[f] = 0);
+        row.cash_amount = round2(CDB_DISTRIBUTION_FIELDS.reduce((sum, f) => sum + (num(row[f]) || 0), 0));
+        allRows.push(row); txGeneratedRows.push(row);
+      });
+    }
 
-      for (const row of txGeneratedRows) {
-        const p = row.particulars || payee;
-        if (fullFund && row.cash_amount !== 0) {
-          pushGL(fullFund, "ASSET", 0, Math.abs(row.cash_amount), "Cash Disbursements");
-        }
-        if (!row._is_sub_row) {
-          if (row.accounts_payable) pushGL("Accounts Payable", "LIABILITY", row.accounts_payable, 0, p);
-          if (row.vat_input_tax) pushGL("Input VAT", "ASSET", row.vat_input_tax, 0, p);
-          if (row.itw_top10k) pushGL("Withholding Tax Payable - Expanded - Top Corp.", "LIABILITY", 0, Math.abs(row.itw_top10k), p);
-          if (row.itw_compensation) pushGL("Withholding Tax Payable - Compensation", "LIABILITY", 0, Math.abs(row.itw_compensation), p);
-          if (row.itw_at_source) pushGL("Withholding Tax Payable - Expanded - at Source", "LIABILITY", 0, Math.abs(row.itw_at_source), p);
-          if (row.sss_prem) pushGL("SSS, PHIC and HDMF Premiums Payable", "LIABILITY", row.sss_prem, 0, p);
-          if (row.sss_loan) pushGL("SSS and HDMF Loans Payable", "LIABILITY", row.sss_loan, 0, p);
-          if (row.direct_labor) pushGL("Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic", "EXPENSE", row.direct_labor, 0, p);
-          if (row.overhead_labor) pushGL("Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic", "EXPENSE", row.overhead_labor, 0, p);
-          if (row.clw_plant) pushGL("Cost of Manufacturing:Overhead:OH-Communication, Light & Water", "EXPENSE", row.clw_plant, 0, p);
-          if (row.clw_admin) pushGL("General and Administrative Expenses:G&A-Communication, Light & Water", "EXPENSE", row.clw_admin, 0, p);
-          if (row.clw_sales) pushGL("Selling Expenses:Selling-Communication, Light & Water", "EXPENSE", row.clw_sales, 0, p);
-          if (row.outside_services) pushGL("Cost of Manufacturing:Overhead:OH-Outside Service", "EXPENSE", row.outside_services, 0, p);
-          if (row.travel_admin) pushGL("General and Administrative Expenses:G&A-Travel and Transportation", "EXPENSE", row.travel_admin, 0, p);
-          if (row.travel_sales) pushGL("Selling Expenses:Selling-Travel and Transportation", "EXPENSE", row.travel_sales, 0, p);
-          if (row.travel_const) pushGL("Cost of Construction:Cons-Travel and Transportation", "EXPENSE", row.travel_const, 0, p);
-          if (row.travel_water) pushGL("Cost of Manufacturing:Overhead:OH-Travel and Transportation", "EXPENSE", row.travel_water, 0, p);
-          if (row.sales_comm) pushGL("Selling Expenses:Selling-Commissions", "EXPENSE", row.sales_comm, 0, p);
-          if (row.delivery_exp) pushGL("Selling Expenses:Selling-Delivery Expense", "EXPENSE", row.delivery_exp, 0, p);
-          if (row.advances) pushGL("Advances to Employees", "ASSET", row.advances, 0, p);
-        }
-        if (row.sundries_title) {
-          const sType = classifyAccount(row.sundries_title);
-          if (row.sundries_dr) pushGL(row.sundries_title, sType, row.sundries_dr, 0, p);
-          if (row.sundries_cr) pushGL(row.sundries_title, sType, 0, Math.abs(row.sundries_cr), p);
-        }
+    const pushGL = (account_name: string, account_type: string, debit: number, credit: number, p: string) => {
+      if (debit === 0 && credit === 0) return;
+      glEntries.push({ month_year: my, entry_date: iso, account_name, particulars: p, folio, debit, credit, source_module: "CDB", source_ref: cno || vno });
+    };
+
+    for (const row of txGeneratedRows) {
+      const p = row.particulars || payee;
+      if (fullFund && row.cash_amount !== 0) pushGL(fullFund, "ASSET", 0, Math.abs(row.cash_amount), "Cash Disbursements");
+      if (!row._is_sub_row) {
+        if (row.accounts_payable) pushGL("Accounts Payable", "LIABILITY", row.accounts_payable, 0, p);
+        if (row.vat_input_tax) pushGL("Input VAT", "ASSET", row.vat_input_tax, 0, p);
+        if (row.itw_top10k) pushGL("Withholding Tax Payable - Expanded - Top Corp.", "LIABILITY", 0, Math.abs(row.itw_top10k), p);
+        if (row.itw_compensation) pushGL("Withholding Tax Payable - Compensation", "LIABILITY", 0, Math.abs(row.itw_compensation), p);
+        if (row.itw_at_source) pushGL("Withholding Tax Payable - Expanded - at Source", "LIABILITY", 0, Math.abs(row.itw_at_source), p);
+        if (row.sss_prem) pushGL("SSS, PHIC and HDMF Premiums Payable", "LIABILITY", row.sss_prem, 0, p);
+        if (row.sss_loan) pushGL("SSS and HDMF Loans Payable", "LIABILITY", row.sss_loan, 0, p);
+        if (row.direct_labor) pushGL("Cost of Manufacturing:Direct Labor:DL-Salaries, Wages and Allowances - Basic", "EXPENSE", row.direct_labor, 0, p);
+        if (row.overhead_labor) pushGL("Cost of Manufacturing:Overhead:OH-Salaries, Wages and Allowances - Basic", "EXPENSE", row.overhead_labor, 0, p);
+        if (row.clw_plant) pushGL("Cost of Manufacturing:Overhead:OH-Communication, Light & Water", "EXPENSE", row.clw_plant, 0, p);
+        if (row.clw_admin) pushGL("General and Administrative Expenses:G&A-Communication, Light & Water", "EXPENSE", row.clw_admin, 0, p);
+        if (row.clw_sales) pushGL("Selling Expenses:Selling-Communication, Light & Water", "EXPENSE", row.clw_sales, 0, p);
+        if (row.outside_services) pushGL("Cost of Manufacturing:Overhead:OH-Outside Service", "EXPENSE", row.outside_services, 0, p);
+        if (row.travel_admin) pushGL("General and Administrative Expenses:G&A-Travel and Transportation", "EXPENSE", row.travel_admin, 0, p);
+        if (row.travel_sales) pushGL("Selling Expenses:Selling-Travel and Transportation", "EXPENSE", row.travel_sales, 0, p);
+        if (row.travel_const) pushGL("Cost of Construction:Cons-Travel and Transportation", "EXPENSE", row.travel_const, 0, p);
+        if (row.travel_water) pushGL("Cost of Manufacturing:Overhead:OH-Travel and Transportation", "EXPENSE", row.travel_water, 0, p);
+        if (row.sales_comm) pushGL("Selling Expenses:Selling-Commissions", "EXPENSE", row.sales_comm, 0, p);
+        if (row.delivery_exp) pushGL("Selling Expenses:Selling-Delivery Expense", "EXPENSE", row.delivery_exp, 0, p);
+        if (row.advances) pushGL("Advances to Employees", "ASSET", row.advances, 0, p);
+      }
+      if (row.sundries_title) {
+        const sType = classifyAccount(row.sundries_title);
+        if (row.sundries_dr) pushGL(row.sundries_title, sType, row.sundries_dr, 0, p);
+        if (row.sundries_cr) pushGL(row.sundries_title, sType, 0, Math.abs(row.sundries_cr), p);
       }
     }
   }
 
-  if (allRows.length === 0) {
-    throw new Error("⚠️ File contains headers only. No transaction rows detected.");
-  }
+  if (allRows.length === 0) throw new Error("0 accounting transactions detected after parsing.");
 
-  allRows.sort((a, b) => a.entry_date.localeCompare(b.entry_date) || compareStrings(a.check_vno, b.check_vno));
-
-  glEntries.forEach(g => {
-    validation.gl_total_debit = round2(validation.gl_total_debit + g.debit);
-    validation.gl_total_credit = round2(validation.gl_total_credit + g.credit);
-  });
+  allRows.sort((a, b) => (a.entry_date || "").localeCompare(b.entry_date || "") || compareStrings(a.check_vno, b.check_vno));
+  glEntries.forEach(g => { validation.gl_total_debit = round2(validation.gl_total_debit + g.debit); validation.gl_total_credit = round2(validation.gl_total_credit + g.credit); });
 
   const t1 = performance.now();
-  console.log(`[UPLOAD] Valid transaction rows found: ${allRows.length}`);
-  console.log(`[UPLOAD] Processing completed in ${((t1 - t0) / 1000).toFixed(2)}s`);
-
+  console.log(`[UPLOAD DEBUG] Success: ${allRows.length} rows parsed in ${((t1 - t0) / 1000).toFixed(2)}s`);
   return { rows: allRows, glEntries, monthYear: detectedMonthYear, validation };
 }
 
-/* ───── PURCHASE BOOK PARSER ───── */
+/* ───── OTHER PARSERS ───── */
 
 export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
@@ -424,26 +462,33 @@ export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<
   let detectedMonthYear = "";
 
   for (const sheetName of wb.SheetNames) {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
-    const h = findHeaderRow(rows);
-    if (h < 0) continue;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" }) as any[][];
+    const header = detectHeaderConfig(rows);
+    if (!header) continue;
 
-    const dataRows = rows.slice(h + 1);
+    const dataRows = rows.slice(header.rowIdx + 1);
     let curHeader: any = null;
     const transactions: any[] = [];
 
     for (let i = 0; i < dataRows.length; i++) {
       if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
       const r = dataRows[i];
-      if (!r || r.every(c => String(c).trim() === "")) continue;
-      const iso = toISODate(r[0]);
-      const type = String(r[1] || "").trim().toLowerCase();
-      if (iso && (type.includes("bill") || type.includes("item receipt"))) {
+      if (!r || r.every(c => !String(c).trim())) continue;
+      
+      const { cols } = header;
+      const iso = toISODate(r[cols.date]);
+      const acct = String(r[cols.account] || "").trim();
+      const dr = num(r[cols.debit]);
+      const cr = num(r[cols.credit]);
+
+      if (iso && (String(r[cols.payee]).trim() || String(r[cols.vno]).trim())) {
         if (curHeader) transactions.push(curHeader);
-        curHeader = { date: iso, no: String(r[2] || "").trim(), supplier: String(r[4] || "").trim(), splits: [] };
+        curHeader = { date: iso, no: String(r[cols.vno] || "").trim(), supplier: String(r[cols.payee] || "").trim(), splits: [] };
         if (!detectedMonthYear) detectedMonthYear = monthYearFromISO(iso);
-      } else if (curHeader && String(r[5] || "").trim()) {
-        curHeader.splits.push({ acct: String(r[5] || "").trim(), dr: num(r[6]), cr: num(r[7]) });
+      }
+      
+      if (curHeader && acct && (dr !== 0 || cr !== 0)) {
+        curHeader.splits.push({ acct, dr, cr });
       }
     }
     if (curHeader) transactions.push(curHeader);
@@ -456,36 +501,23 @@ export async function parsePurchaseBook(buf: ArrayBuffer): Promise<ParsedResult<
       const entry: any = { id: createId(), entry_date: tx.date, supplier: tx.supplier, invoice_no: tx.no, month_year: my };
       
       const sundries: any[] = [];
-      let apTotal = 0;
-      let vatTotal = 0;
+      let apTotal = 0, vatTotal = 0;
 
       for (const s of tx.splits) {
-        const acct = s.acct;
-        if (acct.toLowerCase() === "accounts payable") {
-          apTotal = round2(apTotal + s.cr);
-        } else if (acct.toLowerCase().includes("input")) {
-          vatTotal = round2(vatTotal + s.dr);
-        } else {
-          sundries.push({ title: acct, amount: round2(s.dr - s.cr) });
-        }
-        glEntries.push({ month_year: my, entry_date: tx.date, account_name: acct, particulars: tx.supplier, folio, debit: s.dr, credit: s.cr, source_module: "PB", source_ref: tx.no });
+        if (s.acct.toLowerCase().includes("payable")) apTotal = round2(apTotal + s.cr);
+        else if (s.acct.toLowerCase().includes("input")) vatTotal = round2(vatTotal + s.dr);
+        else sundries.push({ title: s.acct, amount: round2(s.dr - s.cr) });
+        glEntries.push({ month_year: my, entry_date: tx.date, account_name: s.acct, particulars: tx.supplier, folio, debit: s.dr, credit: s.cr, source_module: "PB", source_ref: tx.no });
       }
       entry.ap_trade_cr = apTotal || round2(vatTotal + sundries.reduce((acc, s) => acc + s.amount, 0));
       entry.input_tax = vatTotal;
 
-      if (sundries.length === 0) {
-        allRows.push(entry);
-      } else {
-        sundries.forEach((s, idx) => {
-          allRows.push({ ...entry, id: createId(), ap_trade_cr: idx === 0 ? entry.ap_trade_cr : null, input_tax: idx === 0 ? entry.input_tax : null, sundries_acct_title: s.title, sundries_amount: s.amount, _is_sub_row: idx > 0 });
-        });
-      }
+      if (sundries.length === 0) allRows.push(entry);
+      else sundries.forEach((s, idx) => allRows.push({ ...entry, id: createId(), ap_trade_cr: idx === 0 ? entry.ap_trade_cr : null, input_tax: idx === 0 ? entry.input_tax : null, sundries_acct_title: s.title, sundries_amount: s.amount, _is_sub_row: idx > 0 }));
     }
   }
   return { rows: allRows, glEntries, monthYear: detectedMonthYear };
 }
-
-/* ───── SALES BOOK PARSER ───── */
 
 export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
@@ -494,21 +526,22 @@ export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any
   let detectedMonthYear = "";
 
   for (const sheetName of wb.SheetNames) {
-    await new Promise(r => setTimeout(r, 0));
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
-    const h = findHeaderRow(rows);
-    if (h < 0) continue;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" }) as any[][];
+    const header = detectHeaderConfig(rows);
+    if (!header) continue;
 
-    const dataRows = rows.slice(h + 1);
+    const dataRows = rows.slice(header.rowIdx + 1);
     for (let i = 0; i < dataRows.length; i++) {
       if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
       const r = dataRows[i];
-      const iso = toISODate(r[0]);
+      const { cols } = header;
+      const iso = toISODate(r[cols.date]);
       if (!iso) continue;
-      const type = String(r[1] || "").trim();
-      const inv = String(r[2] || "").trim();
-      const customer = String(r[3] || "").trim();
-      const net = num(r[7]);
+      
+      const type = String(r[1] || "").trim(); // type usually next to date
+      const inv = String(r[cols.vno] || "").trim();
+      const customer = String(r[cols.payee] || "").trim();
+      const net = num(r[cols.debit] || r[cols.credit]); // simplistic
       if (net === 0) continue;
 
       const my = monthYearFromISO(iso);
@@ -519,8 +552,7 @@ export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any
 
       allRows.push({
         id: createId(), entry_date: iso, invoice_no: inv, customer_name: customer, transaction_type: type,
-        cash_amount: type.includes("Receipt") ? gross : 0,
-        ar_trade: type.includes("Invoice") ? gross : 0,
+        cash_amount: type.includes("Receipt") ? gross : 0, ar_trade: type.includes("Invoice") ? gross : 0,
         net_sales: net, output_tax: vat, gross_sales: gross, month_year: my
       });
 
@@ -533,8 +565,6 @@ export async function parseSalesBook(buf: ArrayBuffer): Promise<ParsedResult<any
   return { rows: allRows, glEntries, monthYear: detectedMonthYear };
 }
 
-/* ───── CASH RECEIPTS PARSER ───── */
-
 export async function parseCashReceipts(buf: ArrayBuffer): Promise<ParsedResult<any>> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const allRows: any[] = [];
@@ -542,22 +572,22 @@ export async function parseCashReceipts(buf: ArrayBuffer): Promise<ParsedResult<
   let detectedMonthYear = "";
 
   for (const sheetName of wb.SheetNames) {
-    await new Promise(r => setTimeout(r, 0));
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", blankrows: false }) as any[][];
-    const h = findHeaderRow(rows);
-    if (h < 0) continue;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" }) as any[][];
+    const header = detectHeaderConfig(rows);
+    if (!header) continue;
 
-    const dataRows = rows.slice(h + 1);
+    const dataRows = rows.slice(header.rowIdx + 1);
     for (let i = 0; i < dataRows.length; i++) {
       if (i % 500 === 0) await new Promise(r => setTimeout(r, 0));
       const r = dataRows[i];
-      const iso = toISODate(r[0]);
+      const { cols } = header;
+      const iso = toISODate(r[cols.date]);
       if (!iso) continue;
-      const orNo = String(r[2] || "").trim();
-      const payee = String(r[3] || "").trim();
-      const acct = String(r[5] || "").trim();
-      const dr = num(r[6]);
-      const cr = num(r[7]);
+      const orNo = String(r[cols.vno] || "").trim();
+      const payee = String(r[cols.payee] || "").trim();
+      const acct = String(r[cols.account] || "").trim();
+      const dr = num(r[cols.debit]);
+      const cr = num(r[cols.credit]);
 
       const my = monthYearFromISO(iso);
       if (!detectedMonthYear) detectedMonthYear = my;
@@ -575,4 +605,3 @@ export async function parseCashReceipts(buf: ArrayBuffer): Promise<ParsedResult<
   }
   return { rows: allRows, glEntries, monthYear: detectedMonthYear };
 }
-
